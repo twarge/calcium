@@ -387,7 +387,23 @@ struct EditorView: NSViewRepresentable {
 }
 
 enum Typography {
-    static let body = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    static let heading = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
-    static let answer = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    static let size: CGFloat = 13
+
+    /// Fira Code, bundled in `Resources/Fonts` and registered by
+    /// `ATSApplicationFontsPath`.
+    ///
+    /// Its ligatures happen to line up with this language exactly: `=>`, `!=`,
+    /// `>=` and `<=` are drawn as ⇒, ≠, ≥ and ≤ — the symbols the operators
+    /// already mean. They are contextual alternates, so they occupy the same
+    /// advance width as the characters they replace and the caret still lands
+    /// between them.
+    static let body = named("FiraCode-Regular", fallback: .regular)
+    static let heading = named("FiraCode-Bold", fallback: .bold)
+    static let answer = named("FiraCode-Regular", fallback: .regular)
+
+    /// Falls back to the system monospace face if the bundled font is missing,
+    /// so a broken resource copy degrades rather than crashes.
+    private static func named(_ name: String, fallback weight: NSFont.Weight) -> NSFont {
+        NSFont(name: name, size: size) ?? .monospacedSystemFont(ofSize: size, weight: weight)
+    }
 }

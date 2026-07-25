@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 extension UTType {
     static let calciumDocument = UTType(exportedAs: "com.twarge.calcium.document")
+    /// The same text format under another extension, owned by another app.
+    static let calcaDocument = UTType(importedAs: "io.calca.document")
 }
 
 /// A Calcium document.
@@ -19,8 +21,15 @@ struct CalciumDocument: FileDocument {
     /// The text as edited: `=>` markers with nothing after them.
     var text: String
 
-    static var readableContentTypes: [UTType] { [.calciumDocument, .plainText] }
-    static var writableContentTypes: [UTType] { [.calciumDocument] }
+    static var readableContentTypes: [UTType] {
+        [.calciumDocument, .calcaDocument, .plainText]
+    }
+    // Writable as well as readable, so opening one of these and saving writes
+    // back in place rather than forcing a conversion. It is the same plain
+    // text either way; only the extension differs.
+    static var writableContentTypes: [UTType] {
+        [.calciumDocument, .calcaDocument, .plainText]
+    }
 
     init(text: String = CalciumDocument.starter) {
         self.text = text

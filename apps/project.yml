@@ -11,6 +11,10 @@ targets:
     platform: macOS
     sources:
       - path: Calcium/Sources
+      # A folder reference, so the fonts land in Resources/Fonts/ rather than
+      # being flattened — that path is what ATSApplicationFontsPath names.
+      - path: Calcium/Resources/Fonts
+        type: folder
     settings:
       base:
         PRODUCT_NAME: Calcium
@@ -41,11 +45,32 @@ targets:
         CFBundleName: Calcium
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
+        # Registers the bundled fonts at launch; no code required.
+        ATSApplicationFontsPath: Fonts
         CFBundleDocumentTypes:
           - CFBundleTypeName: Calcium Document
             CFBundleTypeRole: Editor
             LSHandlerRank: Owner
             LSItemContentTypes: [com.twarge.calcium.document]
+          # The same text format under another extension. Declared as an
+          # alternate handler, not an owner: the identifier belongs to the app
+          # that exports it, and this only asks to be offered as a choice.
+          - CFBundleTypeName: Calca Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [io.calca.document]
+          - CFBundleTypeName: Plain Text
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.plain-text]
+        # Imported, not exported: this type is another application's to
+        # declare. Repeating it here only lets this one open the files.
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: io.calca.document
+            UTTypeDescription: Calca Document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [calca]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.twarge.calcium.document
             UTTypeDescription: Calcium Document

@@ -69,7 +69,15 @@ between exact rationals and floats, and the engine has the exact one.
 ```
 
 A document-based macOS app: `DocumentGroup` and an `NSTextView`, with the find
-bar, Find menu and replace-all that TextEdit has.
+bar, Find menu and replace-all that TextEdit has. It opens `.calcium` files and,
+as an alternate handler, `.calca` and plain text.
+
+Set in [Fira Code](https://github.com/tonsky/FiraCode) (SIL OFL 1.1, bundled in
+`apps/Calcium/Resources/Fonts`), whose ligatures happen to line up with this
+language exactly: `=>`, `!=`, `>=` and `<=` draw as ⇒, ≠, ⩾ and ⩽ — the symbols
+those operators already mean. They are contextual alternates in a monospaced
+face, so they take the same width as the characters they replace and the caret
+still lands between them. Add `.ligature: 0` in `highlight` to turn them off.
 
 **Answers live in the text**, written in after each `=>` once typing pauses.
 Type `1+2=>` and the answer appears *after* the caret, which stays where you
