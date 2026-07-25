@@ -23,7 +23,7 @@ struct CalciumDocument: FileDocument {
     static var writableContentTypes: [UTType] { [.calciumDocument] }
 
     init(text: String = CalciumDocument.starter) {
-        self.text = Engine.strippingAnswers(from: text)
+        self.text = text
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -35,10 +35,13 @@ struct CalciumDocument: FileDocument {
         guard let contents = String(data: data, encoding: .utf8) else {
             throw CocoaError(.fileReadInapplicableStringEncoding)
         }
-        text = Engine.strippingAnswers(from: contents)
+        text = contents
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        // The buffer already carries fresh answers; recomputing here costs
+        // little and guarantees the file is right even if a pass was still
+        // pending when the save arrived.
         var onDisk = Engine.materializingAnswers(in: text)
         // A text file ends with a newline. Without this, appending at the end
         // of a document quietly drops the one it was opened with.

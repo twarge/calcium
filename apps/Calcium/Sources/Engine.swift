@@ -29,12 +29,6 @@ enum Engine {
         call(calcium_rewrite, source) ?? source
     }
 
-    /// The document with answers removed. This is what the editor holds while
-    /// you type, so the buffer never shows an answer twice.
-    static func strippingAnswers(from source: String) -> String {
-        call(calcium_strip_answers, source) ?? source
-    }
-
     /// Bridges one `const char * -> char *` call, taking ownership of the
     /// result and always releasing it.
     private static func call(

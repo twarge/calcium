@@ -68,17 +68,30 @@ between exact rationals and floats, and the engine has the exact one.
 ./apps/build.sh release
 ```
 
-A document-based macOS app: `DocumentGroup`, an `NSTextView`, and the answers
-drawn in a column down the right, each aligned to the line its `=>` sits on.
+A document-based macOS app: `DocumentGroup` and an `NSTextView`.
 
-**Answers are not in the buffer while you edit.** They are stripped on open and
-written back on save, so the file on disk stays self-contained and readable
-anywhere, while the editor never rewrites text under the cursor. Putting them in
-the buffer would mean editing the document on every keystroke, which fights
-selection, undo and typing. This is the decision that was open before the app
-existed; see [Next steps](#next-steps) for what it costs.
+**Answers live in the text**, written in after each `=>` shortly after you stop
+typing. What you see is what is on disk — there is no display layer to keep in
+step, and a document is as readable in any other editor as it is here.
 
-Two things that are easy to get wrong and are handled:
+The cost is that the app edits the buffer behind the user, which is the one
+thing a text editor must not get wrong. Four rules keep it honest, and each one
+is there because breaking it produced a real bug during development:
+
+- **Splices bypass the undo stack**, and the text view keeps its *own* undo
+  manager. Sharing the window's means sharing it with SwiftUI's document
+  binding, which this editor writes to on every keystroke; the two interleave
+  and Cmd-Z silently does nothing.
+- **Anything that reasons about where an answer sits reads the live text**, not
+  a cached range. Cached ranges are one refresh out of date while you type, and
+  acting on them both swallows keystrokes and drags the caret backwards.
+- **The caret snaps to before the `=>`,** never after it. After the arrow is the
+  engine's text, so End on an answered line would otherwise park the caret
+  somewhere it cannot type.
+- **Recomputation waits for a pause in typing.** Rewriting the buffer between
+  two keystrokes disturbs the text view's input handling.
+
+Two more, inherited from the format rather than the design:
 
 - **Every automatic substitution is off**, including the system's
   double-space-inserts-a-period, which has no per-view property and needs an
@@ -201,10 +214,9 @@ Three reasons, in order of weight:
 
 - **iOS.** The engine already builds for `aarch64-apple-ios`; the document model
   is shared and only the editor view is AppKit.
-- **The cost of answers-in-a-gutter.** The editing buffer differs from the file,
-  which is invisible in normal use but shows up at the edges: an external change
-  to a file with answers already in it, or a merge conflict, is reconciled
-  against stripped text. Worth revisiting if it bites.
+- **The typing pause.** Answers appear a beat after you stop typing rather than
+  during. That delay is what keeps the splice out of the text view's input
+  handling; narrowing it means making the splice interruptible instead.
 - **Incremental evaluation.** `cargo run --release -p calcium-cli --example bench`
   reports the cost of re-evaluating a document from scratch: ~2.6 ms for the
   420-line reference, of which 0.3 ms is the prelude. Fine for ordinary
