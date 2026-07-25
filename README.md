@@ -68,38 +68,46 @@ between exact rationals and floats, and the engine has the exact one.
 ./apps/build.sh release
 ```
 
-A document-based macOS app: `DocumentGroup` and an `NSTextView`.
+A document-based macOS app: `DocumentGroup` and an `NSTextView`, with the find
+bar, Find menu and replace-all that TextEdit has.
 
-**Answers live in the text**, written in after each `=>` shortly after you stop
-typing. What you see is what is on disk — there is no display layer to keep in
-step, and a document is as readable in any other editor as it is here.
+**Answers live in the text**, written in after each `=>` once typing pauses.
+Type `1+2=>` and the answer appears *after* the caret, which stays where you
+left it — so Return carries on to the next line, and typing carries on where
+you were.
 
-The cost is that the app edits the buffer behind the user, which is the one
-thing a text editor must not get wrong. Four rules keep it honest, and each one
-is there because breaking it produced a real bug during development:
+**Nothing is locked.** The caret goes anywhere, including past the answer, and
+any edit is allowed. Backspacing into an answer deletes a character that is
+immediately written back, so the visible effect is simply that the caret steps
+left. Protecting the answer would take more machinery and read worse; letting it
+be overwritten and restored gets the same result for free. Delete the `=>` and
+its answer goes with it.
+
+What that does demand is exact bookkeeping of the insertion point across a
+splice. The boundaries in `adjust(_:for:)` are the whole design:
+
+| Caret relative to the splice | Result |
+|---|---|
+| at or before it | unchanged — this is why the answer lands *after* the caret |
+| inside, up to and including its far end | offset kept, clamped to the new length — this is why backspace reads as a step left |
+| past it | shifted by the change in length |
+
+Four things that are easy to get wrong, each fixed because it broke in use:
 
 - **Splices bypass the undo stack**, and the text view keeps its *own* undo
   manager. Sharing the window's means sharing it with SwiftUI's document
   binding, which this editor writes to on every keystroke; the two interleave
   and Cmd-Z silently does nothing.
-- **Anything that reasons about where an answer sits reads the live text**, not
-  a cached range. Cached ranges are one refresh out of date while you type, and
-  acting on them both swallows keystrokes and drags the caret backwards.
-- **The caret snaps to before the `=>`,** never after it. After the arrow is the
-  engine's text, so End on an answered line would otherwise park the caret
-  somewhere it cannot type.
+- **Anything reasoning about where an answer sits reads the live text**, never a
+  cached range. Cached ranges are one refresh out of date while you type.
 - **Recomputation waits for a pause in typing.** Rewriting the buffer between
-  two keystrokes disturbs the text view's input handling.
-
-Two more, inherited from the format rather than the design:
-
+  two keystrokes disturbs the text view's input handling and characters vanish.
 - **Every automatic substitution is off**, including the system's
   double-space-inserts-a-period, which has no per-view property and needs an
   app-domain default. In a prose editor a smart quote is a nicety; here it turns
   `3 +  =>` into `3 +. =>` and a string literal into a syntax error.
-- **A line that cannot be computed still answers**, in red, with the reason. A
-  lex or parse failure used to swallow the `=>` and print nothing at all, which
-  left the author with no idea why the line had gone quiet.
+
+A line that cannot be computed still answers, in red, with the reason.
 
 ## Architecture
 

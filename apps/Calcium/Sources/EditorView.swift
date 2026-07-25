@@ -3,21 +3,20 @@ import SwiftUI
 
 /// The editing surface.
 ///
-/// Answers live *in* the text, written in after each `=>` as you type. That is
-/// what makes the file self-describing: what you see is what is on disk, with
-/// no separate display layer to keep in step.
+/// Answers live *in* the text, written in after each `=>`. Type `1+2=>` and the
+/// answer appears after the caret, which stays where you left it — so Return
+/// carries on to the next line and typing carries on where you were.
 ///
-/// The cost is that the app edits the buffer behind the user, which is exactly
-/// the thing a text editor must not get wrong. Three rules keep it honest:
+/// Nothing is locked. The caret goes anywhere, including past the answer, and
+/// any edit is allowed. Backspacing into an answer deletes a character that is
+/// immediately written back, so the visible effect is simply that the caret
+/// steps left. Protecting the answer would take more machinery and read worse:
+/// letting it be overwritten and restored gets the same result for free.
 ///
-///  * answers are spliced through the text storage directly, so they never
-///    enter the undo stack — undo steps over the user's own edits, never ours;
-///  * the insertion point is adjusted for every splice that happens before it,
-///    so typing never jumps;
-///  * an answer is not editable, and the caret will not sit inside one.
+/// What that does demand is exact bookkeeping of the insertion point across a
+/// splice, which is what `adjust(_:for:)` is for.
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
-    var onAnswersChanged: ([Answer]) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -71,14 +70,22 @@ struct EditorView: NSViewRepresentable {
         textView.isGrammarCheckingEnabled = false
         textView.smartInsertDeleteEnabled = false
         textView.enabledTextCheckingTypes = 0
+
+        // The same find bar TextEdit uses: find, replace, replace all, and
+        // incremental highlighting as you type the search term.
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         private var parent: EditorView
-        /// Where the answers currently sit, for styling and for refusing edits.
+        /// Where the answers currently sit, for styling.
         private var answerRegions: [(range: NSRange, isError: Bool)] = []
+        /// The answer text last written to each line, so that deleting a `=>`
+        /// can take its answer with it.
+        private var lastAnswerByLine: [Int: String] = [:]
         /// True while we are splicing, so our own edits are not mistaken for
         /// the user's.
         private var isSplicing = false
@@ -106,6 +113,24 @@ struct EditorView: NSViewRepresentable {
             scheduleRefresh(of: textView)
         }
 
+        /// Return steps over the answer rather than through it.
+        ///
+        /// After typing `1+2=>` the caret sits between the arrow and the
+        /// answer, which is where the author left it. Splitting the line there
+        /// would strand the answer on the next line, so Return goes to the end
+        /// of the line first — which is what the author meant by it.
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            let caret = textView.selectedRange()
+            guard caret.length == 0,
+                  let line = answerLine(at: caret.location, in: textView),
+                  caret.location >= line.afterArrow,
+                  caret.location < line.contentsEnd
+            else { return false }
+            textView.setSelectedRange(NSRange(location: line.contentsEnd, length: 0))
+            return false // let the text view insert the newline at the new spot
+        }
+
         /// Waits for a pause before writing answers back.
         ///
         /// This is the price of keeping answers in the text: rewriting the
@@ -128,58 +153,12 @@ struct EditorView: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
         }
 
-        /// An answer is not the author's text, so it is not theirs to edit.
-        /// A change that reaches outside one — selecting whole lines and
-        /// deleting them, say — is allowed through and simply recomputed.
-        ///
-        /// Judged from the live text, not from `answerRegions`. Those are one
-        /// refresh out of date while the user types, and a stale range here
-        /// silently *rejects* keystrokes: after typing two characters before
-        /// the arrow, the caret sits exactly where the previous answer began.
-        func textView(
-            _ textView: NSTextView, shouldChangeTextIn range: NSRange,
-            replacementString: String?
-        ) -> Bool {
-            if isSplicing { return true }
-            return !isInsideAnswer(range, in: textView)
-        }
-
-        /// Whether `range` lies entirely in the answer part of its line.
-        private func isInsideAnswer(_ range: NSRange, in textView: NSTextView) -> Bool {
-            guard let line = answerLine(at: range.location, in: textView) else { return false }
-            return range.location >= line.afterArrow && NSMaxRange(range) <= line.contentsEnd
-        }
-
-        /// Keeps the caret out of the answers.
-        ///
-        /// It snaps to *before* the `=>`, not after it. After the arrow is
-        /// still the engine's text, so pressing End on an answered line would
-        /// leave the caret somewhere it cannot type. Before the arrow is where
-        /// the author's expression ends, which is what End should mean.
-        func textView(
-            _ textView: NSTextView,
-            willChangeSelectionFromCharacterRange old: NSRange,
-            toCharacterRange new: NSRange
-        ) -> NSRange {
-            guard new.length == 0 else { return new } // a drag-selection may span
-            guard let barrier = answerBarrier(at: new.location, in: textView) else { return new }
-            return NSRange(location: barrier, length: 0)
-        }
-
-        /// Where the caret belongs if `location` has landed in a line's answer,
-        /// or `nil` if it is somewhere the author owns.
-        private func answerBarrier(at location: Int, in textView: NSTextView) -> Int? {
-            guard let line = answerLine(at: location, in: textView) else { return nil }
-            return location > line.arrowStart ? line.arrowStart : nil
-        }
-
         /// The `=>` geometry of the line containing `location`, read from the
         /// live text, or `nil` if that line has no answer on it yet.
         ///
-        /// Everything that has to reason about where an answer sits goes
-        /// through here. The cached `answerRegions` are a refresh out of date
-        /// while the user is typing, and acting on them silently swallows
-        /// keystrokes and drags the caret backwards.
+        /// Live, not cached: `answerRegions` is a refresh out of date while the
+        /// user is typing, and acting on stale offsets moves the caret to the
+        /// wrong place.
         private func answerLine(at location: Int, in textView: NSTextView)
             -> (arrowStart: Int, afterArrow: Int, contentsEnd: Int)?
         {
@@ -197,8 +176,6 @@ struct EditorView: NSViewRepresentable {
 
             let arrowStart = lineStart + body.distance(from: body.startIndex, to: arrow.lowerBound)
             let afterArrow = lineStart + body.distance(from: body.startIndex, to: arrow.upperBound)
-            // Nothing to guard until an answer has actually been written; the
-            // author must be able to sit right after an arrow they just typed.
             guard contentsEnd > afterArrow else { return nil }
             return (arrowStart, afterArrow, contentsEnd)
         }
@@ -212,7 +189,6 @@ struct EditorView: NSViewRepresentable {
             splice(answers, into: textView)
             highlight(textView)
             parent.text = textView.string
-            parent.onAnswersChanged(answers)
         }
 
         /// Replaces the text after each `=>` with its freshly computed answer.
@@ -224,6 +200,29 @@ struct EditorView: NSViewRepresentable {
             // Work out every edit first, then apply them back-to-front so that
             // earlier offsets stay valid as we go.
             var edits: [(range: NSRange, replacement: String)] = []
+
+            // Deleting the `=>` should take its answer with it, rather than
+            // leaving the digits behind as ordinary text. Only the caret's own
+            // line is considered: that is where an arrow can have just been
+            // deleted, and it sidesteps line numbers shifting underneath us.
+            let caretLine = lineIndex(of: textView.selectedRange().location, in: lines)
+            if let caretLine,
+               let stale = lastAnswerByLine[caretLine],
+               !answers.contains(where: { $0.line == caretLine })
+            {
+                let line = lines[caretLine]
+                let body = text.substring(with: line)
+                if !body.contains("=>"), body.hasSuffix(stale) {
+                    edits.append(
+                        (
+                            NSRange(
+                                location: NSMaxRange(line) - (stale as NSString).length,
+                                length: (stale as NSString).length),
+                            ""
+                        ))
+                }
+            }
+
             for answer in answers {
                 guard answer.line >= 0, answer.line < lines.count else { continue }
                 let line = lines[answer.line]
@@ -239,6 +238,9 @@ struct EditorView: NSViewRepresentable {
                     edits.append((existing, replacement))
                 }
             }
+            lastAnswerByLine = Dictionary(
+                answers.map { ($0.line, $0.text.isEmpty ? "" : " " + $0.text) },
+                uniquingKeysWith: { first, _ in first })
 
             var selection = textView.selectedRange()
             if !edits.isEmpty {
@@ -252,15 +254,7 @@ struct EditorView: NSViewRepresentable {
                 storage.beginEditing()
                 for edit in edits.sorted(by: { $0.range.location > $1.range.location }) {
                     storage.replaceCharacters(in: edit.range, with: edit.replacement)
-                    let delta = (edit.replacement as NSString).length - edit.range.length
-                    if NSMaxRange(edit.range) <= selection.location {
-                        // The edit was entirely before the caret; shift it.
-                        selection.location += delta
-                    } else if edit.range.location < selection.location {
-                        // The caret was inside the answer being replaced.
-                        selection.location = edit.range.location
-                        selection.length = 0
-                    }
+                    selection = adjust(selection, for: edit)
                 }
                 storage.endEditing()
                 isSplicing = false
@@ -292,6 +286,38 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
+        /// Moves the insertion point to account for one splice.
+        ///
+        /// Three cases, and the boundaries are what make the editor feel right:
+        ///
+        ///  * **At or before the edit** — unchanged. An answer written at the
+        ///    caret therefore appears *after* it: type `1+2=>` and the caret
+        ///    stays put with ` 3` to its right.
+        ///  * **Inside the edit, up to and including its far end** — the offset
+        ///    into the answer is kept, clamped to the new length. This is what
+        ///    turns a backspace into a step left: the character is deleted and
+        ///    written straight back, leaving only the caret moved.
+        ///  * **Past the edit** — shifted by the change in length.
+        private func adjust(_ selection: NSRange, for edit: (range: NSRange, replacement: String))
+            -> NSRange
+        {
+            var selection = selection
+            let start = edit.range.location
+            let end = NSMaxRange(edit.range)
+            let newLength = (edit.replacement as NSString).length
+
+            if selection.location <= start {
+                return selection
+            }
+            if selection.location <= end {
+                selection.location = start + min(selection.location - start, newLength)
+                selection.length = 0
+                return selection
+            }
+            selection.location += newLength - edit.range.length
+            return selection
+        }
+
         /// Applies attributes only — never characters — so undo and the typing
         /// position are untouched.
         private func highlight(_ textView: NSTextView) {
@@ -317,14 +343,6 @@ struct EditorView: NSViewRepresentable {
                     storage.addAttribute(
                         .foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
                 }
-                if let arrow = line.range(of: "=>") {
-                    let offset = line.distance(from: line.startIndex, to: arrow.lowerBound)
-                    let range = NSRange(location: lineRange.location + offset, length: 2)
-                    if NSMaxRange(range) <= storage.length {
-                        storage.addAttribute(
-                            .foregroundColor, value: NSColor.tertiaryLabelColor, range: range)
-                    }
-                }
             }
 
             // The answers themselves: set back from the text the author wrote,
@@ -338,6 +356,11 @@ struct EditorView: NSViewRepresentable {
                     ], range: region.range)
             }
             storage.endEditing()
+        }
+
+        /// Which line a character offset falls on.
+        private func lineIndex(of location: Int, in lines: [NSRange]) -> Int? {
+            lines.firstIndex { location >= $0.location && location <= NSMaxRange($0) }
         }
 
         /// Line ranges excluding terminators, matching how the engine counts
