@@ -32,9 +32,18 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         ENABLE_HARDENED_RUNTIME: YES
+        # Unsigned wherever unsigned runs — local macOS builds and the
+        # simulator. A physical iPhone or iPad refuses an app with no
+        # signature at install, so the device SDK signs for real: Xcode
+        # manages the certificate and profile under the Twinleaf team.
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
+        "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+        "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+        "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+        "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
+        "DEVELOPMENT_TEAM[sdk=iphoneos*]": 257KW9ZJFP
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
@@ -62,6 +71,13 @@ targets:
           - Fonts/FiraCode-Bold.ttf
         UILaunchScreen: {}
         UISupportsDocumentBrowser: true
+        # Every orientation, both devices: a text editor has no reason to
+        # fight rotation, and iPad multitasking requires the full set anyway.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         CFBundleDocumentTypes:
           - CFBundleTypeName: Calcium Document
             CFBundleTypeRole: Editor
