@@ -39,8 +39,40 @@ private struct FindCommands: View {
     }
 }
 
+/// Removes the Format menu.
+///
+/// `CommandGroup(replacing: .textFormatting) {}` empties it, but SwiftUI
+/// offers no way to remove the menu itself, so an empty "Format" is left in
+/// the menu bar. It is deleted here at the AppKit level — and again whenever
+/// a window becomes main, because SwiftUI rebuilds the main menu as scenes
+/// come and go.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.removeFormatMenu()
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main
+        ) { _ in
+            AppDelegate.removeFormatMenu()
+        }
+    }
+
+    private static func removeFormatMenu() {
+        // Async: at the moment of the notification SwiftUI may not have
+        // finished rebuilding the menu it is about to hand us.
+        DispatchQueue.main.async {
+            guard let menu = NSApp.mainMenu else { return }
+            while let index = menu.items.firstIndex(where: {
+                $0.title == NSLocalizedString("Format", comment: "")
+            }) {
+                menu.removeItem(at: index)
+            }
+        }
+    }
+}
+
 @main
 struct CalciumApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // The `NSTextView` properties are not enough on their own: the smart
