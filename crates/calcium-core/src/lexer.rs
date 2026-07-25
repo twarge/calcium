@@ -10,7 +10,6 @@
 
 use crate::num::Num;
 use num_bigint::BigInt;
-use std::fmt;
 
 /// How an integer was written, so `0xCC => 0xCC` can round-trip.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +64,14 @@ pub enum Tok {
 
     /// `#?` — the AI autocomplete request.
     HashQuestion,
+    /// Input the lexer could not make sense of, carrying its complaint.
+    ///
+    /// Lexing never fails outright. A line holds a calculation *and* its
+    /// answer, and the answer is whatever was there last — possibly nonsense
+    /// the author is halfway through editing. Failing the line would report
+    /// that nonsense as the calculation's error; emitting a token lets the
+    /// parser discard everything past the `=>` as it already does.
+    Invalid(String),
     Eof,
 }
 
@@ -99,19 +106,6 @@ pub struct Token {
     pub space_before: bool,
 }
 
-#[derive(Clone, Debug)]
-pub struct LexError {
-    pub message: String,
-    pub start: usize,
-    pub end: usize,
-}
-
-impl fmt::Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
 /// Characters that read as part of a bare word. Deliberately generous: unit
 /// and currency symbols (`Ω`, `µ`, `$`, `€`) behave exactly like identifiers,
 /// since in Calca a unit *is* just a definition.
@@ -125,7 +119,7 @@ fn is_word_continue(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
+pub fn lex(src: &str) -> Vec<Token> {
     Lexer::new(src).run()
 }
 
@@ -169,7 +163,7 @@ impl<'a> Lexer<'a> {
         c
     }
 
-    fn run(mut self) -> Result<Vec<Token>, LexError> {
+    fn run(mut self) -> Vec<Token> {
         let mut space_before = false;
         loop {
             // Skip whitespace, remembering that we saw some.
@@ -192,13 +186,13 @@ impl<'a> Lexer<'a> {
             }
 
             let tok = if c.is_ascii_digit() || (c == '.' && matches!(self.peek_at(1), Some(d) if d.is_ascii_digit())) {
-                self.lex_number()?
+                self.lex_number()
             } else if c == '"' {
-                self.lex_string()?
+                self.lex_string()
             } else if is_word_start(c) {
                 self.lex_word()
             } else {
-                self.lex_punct()?
+                self.lex_punct()
             };
 
             self.push(tok, start, space_before);
@@ -211,7 +205,7 @@ impl<'a> Lexer<'a> {
             end,
             space_before,
         });
-        Ok(self.out)
+        self.out
     }
 
     fn push(&mut self, tok: Tok, start: usize, space_before: bool) {
@@ -246,19 +240,12 @@ impl<'a> Lexer<'a> {
         self.src[start..end].to_string()
     }
 
-    fn lex_string(&mut self) -> Result<Tok, LexError> {
-        let start = self.offset();
+    fn lex_string(&mut self) -> Tok {
         self.bump(); // opening quote
         let mut value = String::new();
         loop {
             match self.bump() {
-                None => {
-                    return Err(LexError {
-                        message: "unterminated string".to_string(),
-                        start,
-                        end: self.offset(),
-                    })
-                }
+                None => return Tok::Invalid("unterminated string".to_string()),
                 Some('"') => break,
                 Some('\\') => match self.bump() {
                     Some('n') => value.push('\n'),
@@ -269,11 +256,10 @@ impl<'a> Lexer<'a> {
                 Some(c) => value.push(c),
             }
         }
-        Ok(Tok::Str(value))
+        Tok::Str(value)
     }
 
-    fn lex_number(&mut self) -> Result<Tok, LexError> {
-        let start = self.offset();
+    fn lex_number(&mut self) -> Tok {
 
         // Radix-prefixed integers: 0xFF, 0b1010, 0o777. Underscores allowed.
         if self.peek() == Some('0') {
@@ -298,18 +284,12 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     if digits.is_empty() {
-                        return Err(LexError {
-                            message: format!("expected digits after 0{marker}"),
-                            start,
-                            end: self.offset(),
-                        });
+                        return Tok::Invalid(format!("expected digits after 0{marker}"));
                     }
-                    let v = BigInt::parse_bytes(digits.as_bytes(), base).ok_or_else(|| LexError {
-                        message: "invalid number".to_string(),
-                        start,
-                        end: self.offset(),
-                    })?;
-                    return Ok(Tok::Num(Num::from_bigint(v), style));
+                    let Some(v) = BigInt::parse_bytes(digits.as_bytes(), base) else {
+                        return Tok::Invalid("invalid number".to_string());
+                    };
+                    return Tok::Num(Num::from_bigint(v), style);
                 }
             }
         }
@@ -366,18 +346,16 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let integer = BigInt::parse_bytes(mantissa.as_bytes(), 10).ok_or_else(|| LexError {
-            message: "invalid number".to_string(),
-            start,
-            end: self.offset(),
-        })?;
+        let Some(integer) = BigInt::parse_bytes(mantissa.as_bytes(), 10) else {
+            return Tok::Invalid("invalid number".to_string());
+        };
         let mut value = Num::from_bigint(integer);
         let power = exponent - scale;
         if power != 0 {
             let ten = Num::from_i64(10);
             value = value.mul(&ten.pow(&Num::from_i64(power)));
         }
-        Ok(Tok::Num(value, Radix::Dec))
+        Tok::Num(value, Radix::Dec)
     }
 
     /// Consumes digits, absorbing `,` only where it is unambiguously a
@@ -407,8 +385,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn lex_punct(&mut self) -> Result<Tok, LexError> {
-        let start = self.offset();
+    fn lex_punct(&mut self) -> Tok {
         let c = self.bump().unwrap();
         let tok = match c {
             '+' => {
@@ -516,22 +493,12 @@ impl<'a> Lexer<'a> {
                     }
                     Tok::DotDot
                 } else {
-                    return Err(LexError {
-                        message: "unexpected '.'".to_string(),
-                        start,
-                        end: self.offset(),
-                    });
+                    return Tok::Invalid("unexpected '.'".to_string());
                 }
             }
-            other => {
-                return Err(LexError {
-                    message: format!("unexpected character '{other}'"),
-                    start,
-                    end: self.offset(),
-                })
-            }
+            other => return Tok::Invalid(format!("unexpected character '{other}'")),
         };
-        Ok(tok)
+        tok
     }
 }
 
@@ -541,7 +508,6 @@ mod tests {
 
     fn toks(src: &str) -> Vec<Tok> {
         lex(src)
-            .unwrap()
             .into_iter()
             .map(|t| t.tok)
             .filter(|t| *t != Tok::Eof)
@@ -620,9 +586,9 @@ mod tests {
 
     #[test]
     fn records_whitespace_so_the_parser_can_tell_calls_from_products() {
-        let ts = lex("f(x)").unwrap();
+        let ts = lex("f(x)");
         assert!(!ts[1].space_before);
-        let ts = lex("2 (3 + x)").unwrap();
+        let ts = lex("2 (3 + x)");
         assert!(ts[1].space_before);
     }
 

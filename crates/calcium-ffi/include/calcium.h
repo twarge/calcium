@@ -19,6 +19,9 @@ char *calcium_rewrite(const char *source);
 /// The document with the answer after every `=>` removed.
 char *calcium_strip_answers(const char *source);
 
+/// How each line reads: ["heading","code","prose", ...], one per source line.
+char *calcium_line_kinds(const char *source);
+
 /// Releases a string returned by any of the above. Ignores NULL.
 void calcium_string_free(char *text);
 

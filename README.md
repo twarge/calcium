@@ -108,6 +108,10 @@ Four things that are easy to get wrong, each fixed because it broke in use:
   and Cmd-Z silently does nothing.
 - **Anything reasoning about where an answer sits reads the live text**, never a
   cached range. Cached ranges are one refresh out of date while you type.
+- **Prose is coloured by asking the engine**, through `calcium_line_kinds`,
+  rather than by a second heuristic in the editor. The rule is subtler than it
+  looks — an unindented `T = 125 degC` is a calculation, an unindented sentence
+  ending in a full stop is not — and a private copy of it drifts.
 - **Recomputation waits for a pause in typing.** Rewriting the buffer between
   two keystrokes disturbs the text view's input handling and characters vanish.
 - **Every automatic substitution is off**, including the system's

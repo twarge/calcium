@@ -12,8 +12,9 @@ fn main() -> ExitCode {
     match args.first().map(|s| s.as_str()) {
         Some("run") if args.len() >= 2 => run(&args[1..]),
         Some("check") if args.len() >= 2 => check(&args[1..]),
+        Some("kinds") if args.len() >= 2 => kinds(&args[1..]),
         _ => {
-            eprintln!("usage: calcium <run|check> <file.calcium>...");
+            eprintln!("usage: calcium <run|check|kinds> <file.calcium>...");
             ExitCode::from(2)
         }
     }
@@ -27,6 +28,24 @@ fn run(paths: &[String]) -> ExitCode {
                 eprintln!("{path}: {err}");
                 return ExitCode::FAILURE;
             }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Prints how each line is classified. A debugging aid: the editor colours
+/// prose differently, and this is how to see what the engine actually thinks.
+fn kinds(paths: &[String]) -> ExitCode {
+    for path in paths {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            eprintln!("{path}: cannot read");
+            return ExitCode::FAILURE;
+        };
+        for (kind, line) in calcium_core::doc::line_kinds(&source)
+            .iter()
+            .zip(source.lines())
+        {
+            println!("{kind:?}\t{line}");
         }
     }
     ExitCode::SUCCESS

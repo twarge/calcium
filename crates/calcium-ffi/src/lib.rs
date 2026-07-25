@@ -98,6 +98,34 @@ pub unsafe extern "C" fn calcium_strip_answers(source: *const c_char) -> *mut c_
     guarded(move || doc::strip_answers(source))
 }
 
+/// How each line reads, as JSON: `["heading","code","prose", ...]`, one entry
+/// per source line. An editor needs this to colour prose differently without
+/// re-deriving a rule the engine already has.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || {
+        let mut json = String::from("[");
+        for (i, kind) in doc::line_kinds(source).iter().enumerate() {
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(match kind {
+                doc::BlockKind::Heading => "\"heading\"",
+                doc::BlockKind::Code => "\"code\"",
+                doc::BlockKind::Prose => "\"prose\"",
+            });
+        }
+        json.push(']');
+        json
+    })
+}
+
 /// Frees a string returned by this library. Ignores null.
 ///
 /// # Safety
@@ -185,6 +213,12 @@ mod tests {
             assert!(calcium_strip_answers(std::ptr::null()).is_null());
             calcium_string_free(std::ptr::null_mut()); // must not crash
         }
+    }
+
+    #[test]
+    fn reports_line_kinds() {
+        let json = through(calcium_line_kinds, "# Head\nT = 125 degC\nA sentence.");
+        assert_eq!(json, "[\"heading\",\"code\",\"prose\"]");
     }
 
     #[test]

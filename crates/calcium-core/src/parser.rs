@@ -35,21 +35,8 @@ pub struct Parser {
 
 /// Parses one logical line, which may hold several `;`-separated statements.
 pub fn parse_line(src: &str) -> Vec<Statement> {
-    let tokens = match lex(src) {
-        Ok(tokens) => tokens,
-        Err(err) => {
-            // The line does not tokenize, so nothing downstream can run — but
-            // if the author wrote `=>` they still asked for an answer, and
-            // silence is the least useful thing to give them.
-            let arrow = crate::check::outside_code_spans(src).contains("=>");
-            return vec![Statement {
-                stmt: Stmt::Expr(Expr::Error(err.message)),
-                arrow,
-            }];
-        }
-    };
     Parser {
-        tokens,
+        tokens: lex(src),
         pos: 0,
         in_abs: 0,
         in_let_value: 0,
@@ -59,12 +46,8 @@ pub fn parse_line(src: &str) -> Vec<Statement> {
 
 /// Parses a single expression. Convenience for tests and for the solver.
 pub fn parse_expr(src: &str) -> Expr {
-    let tokens = match lex(src) {
-        Ok(tokens) => tokens,
-        Err(err) => return Expr::Error(err.message),
-    };
     let mut parser = Parser {
-        tokens,
+        tokens: lex(src),
         pos: 0,
         in_abs: 0,
         in_let_value: 0,
@@ -606,6 +589,10 @@ impl Parser {
             // or a line the author asked for an answer on gets none at all.
             Tok::Arrow | Tok::Semi | Tok::Eof => {
                 Expr::Error("expected a value".to_string())
+            }
+            Tok::Invalid(message) => {
+                self.bump();
+                Expr::Error(message)
             }
             other => {
                 self.bump();

@@ -378,6 +378,24 @@ pub fn rewrite(source: &str) -> String {
     lines.join("\n")
 }
 
+/// How each source line reads, one entry per line.
+///
+/// Exposed so an editor can colour prose differently from calculations without
+/// inventing its own rule. The two must agree: a line the engine treats as a
+/// calculation but the editor greys out as prose looks broken, and the
+/// heuristic here is subtler than it first appears.
+pub fn line_kinds(source: &str) -> Vec<BlockKind> {
+    let mut kinds = vec![BlockKind::Prose; source.lines().count()];
+    for block in split_blocks(source) {
+        for offset in 0..block.lines.len() {
+            if let Some(slot) = kinds.get_mut(block.line + offset) {
+                *slot = block.kind;
+            }
+        }
+    }
+    kinds
+}
+
 /// Removes the answer after every `=>`, leaving the arrow in place.
 ///
 /// The editor keeps answers out of the text buffer while you type — they are
@@ -481,6 +499,44 @@ mod tests {
         let once = strip_answers(source);
         assert_eq!(once, "    1 + 1 =>\n");
         assert_eq!(strip_answers(&once), once);
+    }
+
+    #[test]
+    fn line_kinds_agree_with_how_lines_are_evaluated() {
+        let source = [
+            "# A heading",              // heading
+            "",                         // blank
+            "T = 125 degC",             // code: unindented, but assigns
+            "ye = 2*pi*2.8024 MHz/gauss", // code
+            "This is a sentence.",      // prose: ends with a full stop
+            "    indented = 1",         // code by indentation
+            "* a list item",            // prose
+        ]
+        .join("\n");
+        assert_eq!(
+            line_kinds(&source),
+            vec![
+                BlockKind::Heading,
+                BlockKind::Prose,
+                BlockKind::Code,
+                BlockKind::Code,
+                BlockKind::Prose,
+                BlockKind::Code,
+                BlockKind::Prose,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stale_answer_cannot_break_its_own_line() {
+        // Whatever is sitting after the `=>` is the previous answer, possibly
+        // mid-edit. It must never be reported as the calculation's error.
+        for source in ["    1+2=> 3'", "    1+2=> 3`x", "    1+2=> \"oops"] {
+            let answers = evaluate(source).answers;
+            assert_eq!(answers.len(), 1, "no answer for {source:?}");
+            assert_eq!(answers[0].text, "3", "wrong answer for {source:?}");
+            assert!(!answers[0].is_error, "flagged an error for {source:?}");
+        }
     }
 
     #[test]

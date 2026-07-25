@@ -187,7 +187,7 @@ struct EditorView: NSViewRepresentable {
             // handed over as-is; no need to strip the previous answers first.
             let answers = Engine.evaluate(textView.string)
             splice(answers, into: textView)
-            highlight(textView)
+            highlight(textView, kinds: Engine.lineKinds(of: textView.string))
             parent.text = textView.string
         }
 
@@ -320,7 +320,7 @@ struct EditorView: NSViewRepresentable {
 
         /// Applies attributes only — never characters — so undo and the typing
         /// position are untouched.
-        private func highlight(_ textView: NSTextView) {
+        private func highlight(_ textView: NSTextView, kinds: [LineKind]) {
             guard let storage = textView.textStorage else { return }
             let whole = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
@@ -328,20 +328,19 @@ struct EditorView: NSViewRepresentable {
                 [.font: Typography.body, .foregroundColor: NSColor.labelColor], range: whole)
 
             let text = storage.string as NSString
+            var index = 0
             text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
                 _, lineRange, _, _ in
-                let line = text.substring(with: lineRange)
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-                if trimmed.hasPrefix("#") {
+                defer { index += 1 }
+                switch kinds.indices.contains(index) ? kinds[index] : .code {
+                case .heading:
                     storage.addAttribute(.font, value: Typography.heading, range: lineRange)
-                    return
-                }
-                // Prose sits back a little so the calculations carry the page.
-                let indented = line.hasPrefix(" ") || line.hasPrefix("\t")
-                if !indented && !line.contains("=>") && !trimmed.isEmpty {
+                case .prose:
+                    // Prose sits back a little so the calculations carry the page.
                     storage.addAttribute(
                         .foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
+                case .code:
+                    break
                 }
             }
 
