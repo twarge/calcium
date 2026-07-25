@@ -1,0 +1,16 @@
+[package]
+name = "calcium-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "WebAssembly build of the Calcium C ABI"
+
+[lib]
+# cdylib only, and only ever built for wasm32 (by build-web.sh). Keeping this
+# crate type out of calcium-ffi is the point: a native cdylib of the engine
+# shadows the static library at link time and the apps break.
+crate-type = ["cdylib"]
+
+[dependencies]
+calcium-ffi = { path = "../calcium-ffi" }

@@ -15,9 +15,9 @@ FONTS="$SITE/source/fonts/firacode"
 [ -d "$SITE/source" ] || { echo "twargeweb not found at $SITE" >&2; exit 1; }
 
 echo "==> wasm engine"
-cargo build --profile wasm-release --target wasm32-unknown-unknown -p calcium-ffi
+cargo build --profile wasm-release --target wasm32-unknown-unknown -p calcium-wasm
 mkdir -p "$DEST" "$FONTS"
-cp target/wasm32-unknown-unknown/wasm-release/calcium_ffi.wasm "$DEST/"
+cp target/wasm32-unknown-unknown/wasm-release/calcium_wasm.wasm "$DEST/calcium_ffi.wasm"
 cp web/calcium.js "$DEST/"
 
 echo "==> fonts (woff2)"
