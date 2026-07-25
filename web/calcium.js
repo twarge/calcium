@@ -125,21 +125,34 @@ const backdrop = document.getElementById("backdrop");
 document.getElementById("loading").remove();
 
 let pending = null;
+let lastAnswers = [];
 
-function refresh() {
-  const answers = evaluate(editor.value);
-  const [text, caret] = splice(editor.value, answers, editor.selectionStart);
-  if (text !== editor.value) {
-    editor.value = text;
-    editor.setSelectionRange(caret, caret);
-  }
-  backdrop.innerHTML = renderBackdrop(editor.value, answers, lineInfo(editor.value));
+/// Repaints the backdrop from the current text. This runs on *every* input,
+/// synchronously: the textarea's own glyphs are transparent, so the backdrop
+/// is the only place typed characters are visible — if it waited for the
+/// debounce, typing would be invisible until the pause. Only the answer
+/// *values* may be a beat stale here; their positions are recomputed against
+/// the live text.
+function paint() {
+  backdrop.innerHTML = renderBackdrop(editor.value, lastAnswers, lineInfo(editor.value));
   // A trailing newline in a <textarea> renders one line shorter than the same
   // text in a <div>; pad so the columns stay aligned.
   if (editor.value.endsWith("\n")) backdrop.innerHTML += "\n";
 }
 
+/// The full pass — evaluate, splice, repaint — after typing pauses.
+function refresh() {
+  lastAnswers = evaluate(editor.value);
+  const [text, caret] = splice(editor.value, lastAnswers, editor.selectionStart);
+  if (text !== editor.value) {
+    editor.value = text;
+    editor.setSelectionRange(caret, caret);
+  }
+  paint();
+}
+
 editor.addEventListener("input", () => {
+  paint();
   clearTimeout(pending);
   pending = setTimeout(refresh, 150);
 });
@@ -149,8 +162,7 @@ editor.addEventListener("scroll", () => {
 
 editor.value = `# Calcium
 
-A text editor that loves math. Everything after \`=>\` is
-computed, live, by a Rust engine running in your browser.
+A text editor that loves math. Everything after \`=>\` is computed, live, by a Rust engine running in your browser.
 
     speed = 88 mph in km/hour =>
     fuel = 12 gallon
