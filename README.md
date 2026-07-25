@@ -68,9 +68,17 @@ between exact rationals and floats, and the engine has the exact one.
 ./apps/build.sh release
 ```
 
-A document-based macOS app: `DocumentGroup` and an `NSTextView`, with the find
-bar, Find menu and replace-all that TextEdit has. It opens `.calcium` files and,
-as an alternate handler, `.calca` and plain text.
+A document-based app for macOS and iOS from a single target: `DocumentGroup`
+with an `NSTextView` editor on the Mac and a `UITextView` editor on iOS, both
+speaking the same in-text answer model to the same Rust engine. On the Mac it
+has the find bar, Find menu and replace-all that TextEdit has. It opens
+`.calcium` files and, as an alternate handler, `.calca` and plain text.
+
+Preferences (⌘,) hold the default font size, the ligature toggle, and whether
+the title bar hides. Zoom and cursor position are remembered *per document*, in
+an extended attribute on the file — the TextEdit mechanism — because view state
+belongs to the document but must not appear in it; a `.calcium` file is plain
+text and stays that way.
 
 Set in [Fira Code](https://github.com/tonsky/FiraCode) (SIL OFL 1.1, bundled in
 `apps/Calcium/Resources/Fonts`), whose ligatures happen to line up with this
@@ -100,7 +108,7 @@ splice. The boundaries in `adjust(_:for:)` are the whole design:
 | inside, up to and including its far end | offset kept, clamped to the new length — this is why backspace reads as a step left |
 | past it | shifted by the change in length |
 
-Four things that are easy to get wrong, each fixed because it broke in use:
+Things that are easy to get wrong, each fixed because it broke in use:
 
 - **Splices bypass the undo stack**, and the text view keeps its *own* undo
   manager. Sharing the window's means sharing it with SwiftUI's document
@@ -121,6 +129,15 @@ Four things that are easy to get wrong, each fixed because it broke in use:
   double-space-inserts-a-period, which has no per-view property and needs an
   app-domain default. In a prose editor a smart quote is a nicety; here it turns
   `3 +  =>` into `3 +. =>` and a string literal into a syntax error.
+- **The title bar hides through SwiftUI, not AppKit.** The pointer is watched by
+  a tracking *area* on the content view — an area is not a subview, so SwiftUI
+  cannot reconcile it away — and the hide itself is `.toolbar(_:for:
+  .windowToolbar)` toggled by value, which collapses the title bar through the
+  system's own path. Two earlier attempts failed instructively: a tracking
+  subview was silently removed by SwiftUI, and alpha-hiding the traffic lights
+  broke ⌘W and ⌘M, because `performClose:` works by clicking the button it
+  could no longer find. The working pattern follows Typeset, including the
+  hysteresis and the debounced hide that stop the boundary strobing.
 
 A line that cannot be computed still answers, in red, with the reason. A name
 that *re*defines something — an earlier definition, or a built-in like the

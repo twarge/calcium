@@ -1,5 +1,11 @@
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#endif
+
+
+#if os(macOS)
 /// The Find menu, matching TextEdit's.
 ///
 /// `NSTextView` already implements all of this through `NSTextFinder`; what it
@@ -38,7 +44,9 @@ private struct FindCommands: View {
             Selector(("performTextFinderAction:")), to: nil, from: sender)
     }
 }
+#endif
 
+#if os(macOS)
 /// Removes the Format menu.
 ///
 /// `CommandGroup(replacing: .textFormatting) {}` empties it, but SwiftUI
@@ -70,9 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#endif
+
 @main
 struct CalciumApp: App {
+    #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
 
     init() {
         // The `NSTextView` properties are not enough on their own: the smart
@@ -101,19 +113,27 @@ struct CalciumApp: App {
 
     var body: some Scene {
         DocumentGroup(newDocument: CalciumDocument()) { file in
-            ContentView(text: file.$document.text)
+            ContentView(text: file.$document.text, fileURL: file.fileURL)
         }
         .defaultSize(width: 900, height: 620)
         .commands {
             // The format has no use for rich text, and these would only put
             // characters in the buffer that the parser cannot read back.
             CommandGroup(replacing: .textFormatting) {}
+            #if os(macOS)
             CommandGroup(after: .pasteboard) {
                 FindCommands()
             }
+            #endif
             CommandGroup(replacing: .help) {
                 Link("Calcium Reference", destination: URL(string: "https://github.com/twarge/calcium")!)
             }
         }
+
+        #if os(macOS)
+        Settings {
+            PreferencesView()
+        }
+        #endif
     }
 }

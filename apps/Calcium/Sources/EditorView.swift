@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 
@@ -17,6 +18,7 @@ import SwiftUI
 /// splice, which is what `adjust(_:for:)` is for.
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
+    var fileURL: URL?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -41,6 +43,7 @@ struct EditorView: NSViewRepresentable {
             target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
         textView.addGestureRecognizer(pinch)
         context.coordinator.installZoomShortcuts(for: textView)
+        context.coordinator.followPreferences(of: textView)
 
         // Not synchronously: publishing answers is a state change and this is
         // still SwiftUI's view-building pass.
@@ -50,6 +53,7 @@ struct EditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
+        context.coordinator.fileURL = fileURL
         // Only touch the text when it genuinely differs. Assigning `string`
         // while the user is typing would collapse the selection and clear undo.
         guard textView.string != text else { return }
@@ -60,7 +64,7 @@ struct EditorView: NSViewRepresentable {
     private func configure(_ textView: NSTextView) {
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = Typography.body
+        textView.font = Typography.body(1)
         textView.textContainerInset = CGSize(width: 14, height: 14)
 
         // Every automatic substitution is off. This is a document of
@@ -113,6 +117,43 @@ struct EditorView: NSViewRepresentable {
             self.parent = parent
         }
 
+        // MARK: Per-document view state
+
+        /// Where this document lives, for the view-state extended attribute.
+        var fileURL: URL?
+        /// This document's zoom. Multiplies the Preferences font size.
+        private var scale: CGFloat = 1
+        /// Debounces state writes; arrow keys should not each cost an xattr.
+        private var statePersist: DispatchWorkItem?
+
+        func restoreViewState(in textView: NSTextView) {
+            guard let url = fileURL, let state = DocumentViewState.load(from: url) else {
+                return
+            }
+            scale = CGFloat(state.scale)
+            let length = (textView.string as NSString).length
+            textView.setSelectedRange(
+                NSRange(location: min(max(0, state.cursor), length), length: 0))
+        }
+
+        private func persistViewStateSoon(for textView: NSTextView) {
+            statePersist?.cancel()
+            let item = DispatchWorkItem { [weak self, weak textView] in
+                guard let self, let textView, let url = self.fileURL else { return }
+                DocumentViewState(
+                    scale: Double(self.scale),
+                    cursor: textView.selectedRange().location
+                ).save(to: url)
+            }
+            statePersist = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard !isSplicing, let textView = notification.object as? NSTextView else { return }
+            persistViewStateSoon(for: textView)
+        }
+
         // MARK: Zoom
 
         /// Scale at the moment the pinch began.
@@ -122,9 +163,9 @@ struct EditorView: NSViewRepresentable {
             guard let textView = recognizer.view as? NSTextView else { return }
             switch recognizer.state {
             case .began:
-                pinchBase = Typography.scale
+                pinchBase = scale
             case .changed:
-                Typography.scale = pinchBase * (1 + recognizer.magnification)
+                scale = pinchBase * (1 + recognizer.magnification)
                 rescale(textView)
             default:
                 break
@@ -135,6 +176,17 @@ struct EditorView: NSViewRepresentable {
         /// local monitor because the coordinator is not in the responder
         /// chain, and a text-view subclass would cost the system factory.
         private var keyMonitor: Any?
+
+        /// Re-styles when Preferences change, so an open document follows the
+        /// font-size slider live.
+        func followPreferences(of textView: NSTextView) {
+            NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+            ) { [weak self, weak textView] _ in
+                guard let self, let textView else { return }
+                self.rescale(textView)
+            }
+        }
 
         func installZoomShortcuts(for textView: NSTextView) {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
@@ -148,7 +200,9 @@ struct EditorView: NSViewRepresentable {
                 switch key {
                 case "=", "+": self.zoom(textView, by: 1.1)
                 case "-": self.zoom(textView, by: 1 / 1.1)
-                case "0": Typography.scale = 1; self.rescale(textView)
+                case "0":
+                    self.scale = 1
+                    self.rescale(textView)
                 default: return event
                 }
                 return nil
@@ -162,13 +216,15 @@ struct EditorView: NSViewRepresentable {
         }
 
         func zoom(_ textView: NSTextView, by factor: CGFloat) {
-            Typography.scale *= factor
+            scale *= factor
             rescale(textView)
         }
 
         private func rescale(_ textView: NSTextView) {
-            textView.font = Typography.body
+            scale = min(max(scale, 0.5), 4)
+            textView.font = Typography.body(scale)
             highlight(textView, lines: Engine.lines(of: textView.string))
+            persistViewStateSoon(for: textView)
         }
 
         // MARK: Editing
@@ -408,7 +464,12 @@ struct EditorView: NSViewRepresentable {
             let whole = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
             storage.setAttributes(
-                [.font: Typography.body, .foregroundColor: NSColor.labelColor], range: whole)
+                [
+                    .font: Typography.body(scale),
+                    .foregroundColor: NSColor.labelColor,
+                    // 0 disables ligatures; 1 is the font's defaults.
+                    .ligature: Typography.ligatures ? 1 : 0,
+                ], range: whole)
 
             let text = storage.string as NSString
             var index = 0
@@ -418,7 +479,8 @@ struct EditorView: NSViewRepresentable {
                 let line = lines.indices.contains(index) ? lines[index] : nil
                 switch line?.kind ?? .code {
                 case .heading:
-                    storage.addAttribute(.font, value: Typography.heading, range: lineRange)
+                    storage.addAttribute(
+                        .font, value: Typography.heading(self.scale), range: lineRange)
                 case .prose:
                     // Prose sits back a little so the calculations carry the page.
                     storage.addAttribute(
@@ -459,7 +521,6 @@ struct EditorView: NSViewRepresentable {
             for region in answerRegions where NSMaxRange(region.range) <= storage.length {
                 storage.addAttributes(
                     [
-                        .font: Typography.answer,
                         .foregroundColor: region.isError
                             ? NSColor.systemRed : NSColor.secondaryLabelColor,
                     ], range: region.range)
@@ -508,22 +569,16 @@ enum Palette {
 }
 
 enum Typography {
-    static let baseSize: CGFloat = 13
-
-    /// Pinch-to-zoom scale, persisted across launches. Fonts are computed
-    /// from it on each use, so changing it and re-highlighting rescales the
-    /// whole document.
-    static var scale: CGFloat = {
-        let saved = UserDefaults.standard.double(forKey: "fontScale")
-        return saved > 0 ? CGFloat(saved) : 1
-    }() {
-        didSet {
-            scale = min(max(scale, 0.5), 4)
-            UserDefaults.standard.set(Double(scale), forKey: "fontScale")
-        }
+    /// The size ⌘0 returns to, set in Preferences.
+    static var baseSize: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: "baseFontSize")
+        return saved > 0 ? CGFloat(saved) : 13
     }
 
-    static var size: CGFloat { baseSize * scale }
+    /// Whether Fira Code's ligatures draw, set in Preferences.
+    static var ligatures: Bool {
+        UserDefaults.standard.object(forKey: "ligatures") as? Bool ?? true
+    }
 
     /// Fira Code, bundled in `Resources/Fonts` and registered by
     /// `ATSApplicationFontsPath`.
@@ -533,13 +588,24 @@ enum Typography {
     /// already mean. They are contextual alternates, so they occupy the same
     /// advance width as the characters they replace and the caret still lands
     /// between them.
-    static var body: NSFont { named("FiraCode-Regular", fallback: .regular) }
-    static var heading: NSFont { named("FiraCode-Bold", fallback: .bold) }
-    static var answer: NSFont { named("FiraCode-Regular", fallback: .regular) }
+    ///
+    /// The scale is per-document — pinch zoom in one window leaves the others
+    /// alone — so the fonts are functions of it rather than statics.
+    static func body(_ scale: CGFloat) -> NSFont {
+        named("FiraCode-Regular", scale, fallback: .regular)
+    }
+    static func heading(_ scale: CGFloat) -> NSFont {
+        named("FiraCode-Bold", scale, fallback: .bold)
+    }
 
     /// Falls back to the system monospace face if the bundled font is missing,
     /// so a broken resource copy degrades rather than crashes.
-    private static func named(_ name: String, fallback weight: NSFont.Weight) -> NSFont {
-        NSFont(name: name, size: size) ?? .monospacedSystemFont(ofSize: size, weight: weight)
+    private static func named(
+        _ name: String, _ scale: CGFloat, fallback weight: NSFont.Weight
+    ) -> NSFont {
+        let size = baseSize * min(max(scale, 0.5), 4)
+        return NSFont(name: name, size: size)
+            ?? .monospacedSystemFont(ofSize: size, weight: weight)
     }
 }
+#endif

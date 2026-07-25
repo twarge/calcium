@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import FoundationModels
 
@@ -116,3 +117,4 @@ final class Autocomplete {
         }
     }
 }
+#endif

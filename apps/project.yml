@@ -1,18 +1,22 @@
 name: Calcium
 options:
   bundleIdPrefix: com.twarge
-  deploymentTarget:
-    macOS: "14.0"
   createIntermediateGroups: true
 
 targets:
   Calcium:
     type: application
-    platform: macOS
+    # One target, both platforms. Shared Swift throughout; the AppKit editor
+    # and window chrome are fenced with #if os(macOS), the UIKit editor with
+    # #if os(iOS), and the Rust engine is linked per-SDK below.
+    supportedDestinations: [macOS, iOS]
+    deploymentTarget:
+      macOS: "14.0"
+      iOS: "17.0"
     sources:
       - path: Calcium/Sources
-      # A folder reference, so the fonts land in Resources/Fonts/ rather than
-      # being flattened — that path is what ATSApplicationFontsPath names.
+      # A folder reference, so the fonts land in Resources/Fonts/ — the path
+      # ATSApplicationFontsPath (macOS) and UIAppFonts (iOS) both name.
       - path: Calcium/Resources/Fonts
         type: folder
     settings:
@@ -22,32 +26,42 @@ targets:
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
+        # XcodeGen's deploymentTarget block does not reach a
+        # supportedDestinations target; without these the beta SDK's own
+        # version becomes the floor and the app refuses older simulators.
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
-        # The Rust engine: a static library plus its C header, reached through
-        # a module map so Swift can `import CalciumFFI`.
-        # Always the release engine, even in a Debug app build. Unoptimised,
-        # evaluating a document takes six times as long — enough for the editor
-        # to feel it — and the Rust is exercised by `cargo test`, not by
-        # stepping through it from Xcode. Swift stays debuggable either way.
-        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../target/release"
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
         HEADER_SEARCH_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
-        # FoundationModels is weak-linked: the deployment target predates it, and
-        # `#?` resolution is availability-gated at runtime.
-        OTHER_LDFLAGS: "-lcalcium_ffi -weak_framework FoundationModels"
+        # The Rust engine, one static library per SDK. Always the release
+        # build: unoptimised it is six times slower and the editor feels it.
+        "LIBRARY_SEARCH_PATHS[sdk=macosx*]": "$(SRCROOT)/../target/release"
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(SRCROOT)/../target/aarch64-apple-ios/release"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(SRCROOT)/../target/universal-ios-sim/release"
+        "OTHER_LDFLAGS[sdk=macosx*]": "-lcalcium_ffi -weak_framework FoundationModels"
+        "OTHER_LDFLAGS[sdk=iphoneos*]": "-lcalcium_ffi"
+        "OTHER_LDFLAGS[sdk=iphonesimulator*]": "-lcalcium_ffi"
     info:
       path: Calcium/Info.plist
       properties:
         CFBundleName: Calcium
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
-        # Registers the bundled fonts at launch; no code required.
+        # Registers the bundled fonts: macOS reads the directory, iOS the list.
         ATSApplicationFontsPath: Fonts
+        UIAppFonts:
+          - Fonts/FiraCode-Regular.ttf
+          - Fonts/FiraCode-Medium.ttf
+          - Fonts/FiraCode-SemiBold.ttf
+          - Fonts/FiraCode-Bold.ttf
+        UILaunchScreen: {}
+        UISupportsDocumentBrowser: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Calcium Document
             CFBundleTypeRole: Editor
@@ -85,4 +99,18 @@ targets:
           set -euo pipefail
           cd "$SRCROOT/.."
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
-          cargo build --release -p calcium-ffi
+          case "$PLATFORM_NAME" in
+            iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;
+            iphonesimulator)
+              # Both simulator architectures, folded into one library — the
+              # generic destination links x86_64 as well as arm64.
+              cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi
+              cargo build --release --target x86_64-apple-ios -p calcium-ffi
+              mkdir -p target/universal-ios-sim/release
+              lipo -create \
+                target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \
+                target/x86_64-apple-ios/release/libcalcium_ffi.a \
+                -output target/universal-ios-sim/release/libcalcium_ffi.a
+              ;;
+            *)               cargo build --release -p calcium-ffi ;;
+          esac
