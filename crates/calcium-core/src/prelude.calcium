@@ -1,0 +1,306 @@
+# Calcium prelude
+#
+# Written in Calcium's own syntax, because a unit is nothing more than a
+# definition and dimensional analysis is what falls out of ordinary symbolic
+# algebra. `ft = 3048 m / 10000` is all it takes for `100 ft in m` to work.
+#
+# Names defined here are marked as units, which means they stay symbolic in
+# ordinary expressions (so `4 weeks + 6 days` does not collapse into seconds)
+# and expand only when an `in` conversion forces them to.
+#
+# SI magnitude prefixes are not enumerated; they are applied programmatically,
+# so `PW`, `nW` and `µW` all work without appearing below.
+#
+# NOTE: two adjacent bare words are a single multi-word identifier in this
+# language (`mass of earth`), so a product of units must be written with an
+# explicit `*`. `N = kg m/s^2` would define N in terms of a variable literally
+# named "kg m".
+
+## Base units
+
+m = m
+kg = kg
+s = s
+A = A
+K = K
+mol = mol
+cd = cd
+rad = rad
+bit = bit
+$ = $
+
+## Mathematical constants
+#
+# These are marked as constants rather than units, so they expand everywhere
+# instead of staying symbolic.
+
+pi = 3.14159265358979323846264338327950288
+π = pi
+tau = 2*pi
+e = 2.71828182845904523536028747135266250
+phi = 1.61803398874989484820458683436563812
+
+## Dimensionless
+
+% = 1/100
+
+## Length
+
+meter = m
+meters = m
+metre = m
+metres = m
+inch = 254 m / 10000
+inches = inch
+in = inch
+ft = 12 inch
+foot = ft
+feet = ft
+yard = 3 ft
+yards = yard
+yd = yard
+mile = 5280 ft
+miles = mile
+mi = mile
+nmi = 1852 m
+angstrom = 1e-10 m
+au = 149597870700 m
+lightyear = 9460730472580800 m
+parsec = 30856775814913673 m
+
+## Area and volume
+
+are = 100 m^2
+hectare = 100 are
+acre = 4046.8564224 m^2
+liter = m^3/1000
+liters = liter
+litre = liter
+litres = liter
+L = liter
+gallon = 3.785411784 liter
+gallons = gallon
+gal = gallon
+quart = gallon/4
+quarts = quart
+pint = gallon/8
+pints = pint
+cup = gallon/16
+cups = cup
+floz = cup/8
+tablespoon = floz/2
+tablespoons = tablespoon
+tbsp = tablespoon
+teaspoon = tablespoon/3
+teaspoons = teaspoon
+tsp = teaspoon
+
+## Mass
+
+gram = kg/1000
+grams = gram
+g = gram
+tonne = 1000 kg
+lb = 0.45359237 kg
+lbs = lb
+pound = lb
+pounds = lb
+ton = 2000 lb
+tons = ton
+oz = lb/16
+ounce = oz
+ounces = oz
+stone = 14 lb
+slug = 14.593902937 kg
+
+## Time
+
+second = s
+seconds = s
+sec = s
+secs = s
+minute = 60 s
+minutes = minute
+mins = minute
+hour = 60 minute
+hours = hour
+hr = hour
+hrs = hour
+day = 24 hour
+days = day
+week = 7 day
+weeks = day * 7
+fortnight = 2 week
+year = 365.2425 day
+years = year
+yr = year
+month = year/12
+months = month
+mo = month
+Hz = 1/s
+hertz = Hz
+rpm = (2*pi*rad)/(60*s)
+
+## Angle
+
+radian = rad
+radians = rad
+deg = pi*rad/180
+degree = deg
+degrees = deg
+° = deg
+grad = pi*rad/200
+turn = 2*pi*rad
+
+## Force, energy, power
+
+N = kg*m/s^2
+newton = N
+newtons = N
+lbf = 4.4482216152605 N
+dyne = 1e-5 N
+Pa = N/m^2
+pascal = Pa
+bar = 100000 Pa
+atm = 101325 Pa
+psi = lbf/inch^2
+torr = atm/760
+mmHg = torr
+J = N*m
+joule = J
+joules = J
+erg = 1e-7 J
+cal = 4.184 J
+calorie = cal
+calories = cal
+kcal = 1000 cal
+Cal = kcal
+BTU = 1055.05585262 J
+eV = 1.602176634e-19 J
+W = J/s
+watt = W
+watts = W
+HP = 745.69987158227022 W
+hp = HP
+horsepower = HP
+
+## Electromagnetism
+
+ampere = A
+amp = A
+amps = A
+C = A*s
+coulomb = C
+V = W/A
+volt = V
+volts = V
+Ω = V/A
+Ohm = Ω
+ohm = Ω
+ohms = Ω
+F = C/V
+farad = F
+H = V*s/A
+henry = H
+Wb = V*s
+weber = Wb
+T = Wb/m^2
+tesla = T
+S = A/V
+siemens = S
+
+## Temperature
+
+kelvin = K
+kelvins = K
+
+## Information
+
+bits = bit
+byte = 8 bit
+bytes = byte
+B = byte
+KB = 1000 byte
+MB = 1000 KB
+GB = 1000 MB
+TB = 1000 GB
+KiB = 1024 byte
+MiB = 1024 KiB
+GiB = 1024 MiB
+TiB = 1024 GiB
+
+## Miscellaneous
+#
+# No `c` for the speed of light: it shadows far too common a variable name.
+
+bpm = 1/minute
+mph = mile/hour
+mpg = mile/gallon
+kmph = 1000 m/hour
+knot = nmi/hour
+G = 6.67430e-11 m^3/kg/s^2
+g0 = 9.80665 m/s^2
+
+## Currency
+#
+# Offline, fixed rates, quoted against the US dollar.
+#
+# A fixed snapshot, so that tests measure the engine rather than the exchange
+# rate. These are stale as actual money and belong behind a refresh mechanism
+# before anyone relies on them.
+
+usd = $
+USD = $
+dollar = $
+dollars = $
+eur = 1.1376045 $
+EUR = eur
+€ = eur
+euro = eur
+euros = eur
+gbp = 1.3439 $
+GBP = gbp
+£ = gbp
+jpy = 0.0061033634 $
+JPY = jpy
+¥ = jpy
+yen = jpy
+cny = 0.14766446 $
+CNY = cny
+brl = 0.19671437 $
+BRL = brl
+cad = 0.7292 $
+CAD = cad
+aud = 0.6564 $
+AUD = aud
+chf = 1.2531 $
+CHF = chf
+inr = 0.0114 $
+INR = inr
+₹ = inr
+mxn = 0.0543 $
+MXN = mxn
+krw = 0.000699 $
+KRW = krw
+₩ = krw
+rub = 0.0127 $
+RUB = rub
+₽ = rub
+sek = 0.1064 $
+SEK = sek
+nok = 0.0996 $
+NOK = nok
+dkk = 0.1525 $
+DKK = dkk
+pln = 0.2749 $
+PLN = pln
+nzd = 0.6019 $
+NZD = nzd
+sgd = 0.7813 $
+SGD = sgd
+hkd = 0.1286 $
+HKD = hkd
+zar = 0.0578 $
+ZAR = zar
+try = 0.0236 $
+TRY = try

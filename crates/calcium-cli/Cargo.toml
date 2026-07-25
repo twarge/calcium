@@ -1,0 +1,13 @@
+[package]
+name = "calcium-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "calcium"
+path = "src/main.rs"
+
+[dependencies]
+calcium-core = { path = "../calcium-core" }

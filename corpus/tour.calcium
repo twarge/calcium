@@ -1,0 +1,216 @@
+# A tour of Calcium
+
+This document is both a tutorial and a test. Every `=>` below is checked by
+`cargo test`, so if the engine ever stops agreeing with it, the build fails.
+
+Write `=>` anywhere and the answer appears to its right.
+
+    2 + 2       => 4
+    7 * 6       => 42
+    2^10        => 1,024
+    sqrt(2)     => 1.4142
+
+Everything is plain text. The answers live in the document, so a file can be
+mailed, committed to git, or opened in any editor.
+
+
+## Arithmetic
+
+The usual operators, with the usual precedence.
+
+    1 + 2 * 3   => 7
+    (1 + 2) * 3 => 9
+    10 / 4      => 2.5
+    17 mod 5    => 2
+    2^32 - 1    => 4,294,967,295
+
+Division is exact until it is printed, so no rounding creeps in along the way.
+
+    1/3 + 1/6   => 0.5
+    -22/7       => -3.1429
+
+Numbers are grouped above a thousand, and very large or very small ones switch
+to exponent notation.
+
+    999             => 999
+    1000            => 1,000
+    2.5e3           => 2,500
+    1.5e-3          => 0.0015
+    1e20 * 3        => 3e20
+
+
+## Variables
+
+A name and a value. The name may contain spaces, which is what makes a
+document readable.
+
+    radius = 3
+    area   = pi * radius^2 => 28.2743
+
+    wheel diameter = 26 inch
+    wheel circumference
+      = pi * wheel diameter in m
+      => 2.0747 m
+
+Definitions are recomputed, not frozen. Change an input and everything
+downstream follows.
+
+    side   = 4
+    volume = side^3 => 64
+
+    side   = 5
+    volume => 125
+
+
+## Functions
+
+Give a definition a parameter list and it becomes a function.
+
+    to fahrenheit(c) = 9/5 * c + 32
+
+    to fahrenheit(0)   => 32
+    to fahrenheit(100) => 212
+
+Arguments can be passed by name, in any order.
+
+    hypotenuse(a, b) = sqrt(a^2 + b^2)
+
+    hypotenuse(3, 4)      => 5
+    hypotenuse(b = 4, a = 3) => 5
+
+Functions may recurse.
+
+    factorial(n) = if n <= 1 then 1 else n * factorial(n - 1)
+
+    factorial(5)  => 120
+    factorial(10) => 3,628,800
+
+A `let` keeps the body of a longer function readable.
+
+    quadratic mean(a, b) =
+      let squares = a^2 + b^2 in
+      sqrt(squares / 2)
+
+    quadratic mean(3, 4) => 3.5355
+
+
+## Units
+
+Units are ordinary names, so they combine and cancel by algebra alone. Convert
+with `in`.
+
+    100 ft in m     => 30.48 m
+    1 mile in km    => 1.6093 km
+    26 inch in cm   => 66.04 cm
+    1 day in s      => 86,400 s
+    2 cups in floz  => 16 floz
+
+Compound units work the same way.
+
+    60 mph in m/s        => 26.8224 m/s
+    12 V * 2 A in W      => 24 W
+    100 W * 1 hour in kJ => 360 kJ
+
+Unlike quantities stay apart until you ask for a conversion. This is on
+purpose: it keeps a schedule readable instead of collapsing it into seconds.
+
+    build time = 4 days + 3 weeks => 4 days + 3 weeks
+    build time in days            => 25 days
+
+Terms come back in a fixed order — by name, with any constant last — so a
+result is the same every time it is recomputed.
+
+SI prefixes are understood without being listed anywhere.
+
+    1 GB in MB   => 1,000 MB
+    1 GiB in MiB => 1,024 MiB
+    2500 W in kW => 2.5 kW
+
+You can invent units by defining them.
+
+    dog = 30 lbs
+    1 ton in dog => 66.6667 dog
+
+
+## Percentages and bases
+
+    15% * 80    => 12
+    3/8 in %    => 37.5%
+    255 in hex  => 0xFF
+    255 in binary => 0b11111111
+    0xFF + 1    => 0x100
+
+
+## Solving
+
+Ask for a variable that has no value and Calcium looks back through the
+document for something that determines it.
+
+    perimeter = 2 * (w + h)
+
+    w => -h + 0.5 perimeter
+
+That works on equations too, not just definitions.
+
+    3x + 6 = 0
+    x => -2
+
+A quadratic gives both roots.
+
+    y^2 - 5y + 6 = 0
+    y => [2, 3]
+
+
+## Lists and matrices
+
+    [1, 2; 3, 4] + [5, 6; 7, 8] => [6, 8; 10, 12]
+    [1, 2; 3, 4] * [5; 6]       => [17; 39]
+    [1, 2; 3, 4]^T              => [1, 3; 2, 4]
+    |[1, 2; 3, 4]|              => -2
+    |[3, 4]|                    => 5
+
+Ranges generate data, and `map`, `filter` and `reduce` work over it.
+
+    map(x^2, 1..4)              => [1, 4, 9, 16]
+    filter(x > 2, [1, 2, 3, 4]) => [3, 4]
+    reduce(acc + x, [1, 2, 3, 4]) => 10
+    sum(x, x = 1..5)            => 15
+    prod(x, x = 1..5)           => 120
+
+A range also stands for a measurement with error, and arithmetic carries the
+uncertainty through.
+
+    measured = (5 - 0.1)..(5 + 0.1) => 4.9..5.1
+    measured^2                      => 24.01..26.01
+
+
+## Calculus
+
+    der(x^3, x)    => 3 x^2
+    der(sin(x), x) => cos(x)
+
+    position(t) = 1/2*a*t^2 + v*t
+
+    der(position, t)    => a*t + v
+    der(position, t, 2) => a
+
+
+## Complex numbers
+
+`i` is a symbol like any other, with one rule attached: `i^2` is `-1`.
+
+    i^2                => -1
+    (2 + 3i)*(2 - 3i)  => 13
+    sqrt(-9)           => 3i
+
+
+## Prose and calculation
+
+Indented lines are calculations. Unindented lines that read like sentences are
+prose, and are left alone. This paragraph is prose because it ends with a full
+stop.
+
+1 + 1 => 2
+
+That line was treated as a calculation because it has no sentence punctuation
+and does contain an operator.

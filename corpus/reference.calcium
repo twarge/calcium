@@ -1,0 +1,422 @@
+# Calcium reference
+
+Systematic coverage of the language, one section per feature. Every `=>` is a
+test; `cargo test` fails if any of them stops holding.
+
+Where a result could reasonably be printed more than one way, this file records
+the convention the engine actually follows: terms ordered by name with the
+constant last, units spaced unless they are symbols, and answers rounded to
+four decimal places unless `@precision` says otherwise.
+
+
+## Numbers
+
+### Literals
+
+    12          => 12
+    3,100       => 3,100
+    0.125       => 0.125
+    .5          => 0.5
+    3.14159e2   => 314.159
+
+### Exactness
+
+Values stay exact through arithmetic and are only rounded to be displayed, so
+long chains do not drift.
+
+    0.1 + 0.2       => 0.3
+    1/3 * 3         => 1
+    (1/7) * 7       => 1
+    2^62            => 4.6117e18
+    2^100           => 1.2677e30
+
+### Precision and grouping
+
+    @precision = 8
+    pi          => 3.14159265
+
+    @precision = 2
+    pi          => 3.14
+
+    @precision = 4
+    @group = false
+    1234567     => 1234567
+
+    @group = true
+    1234567     => 1,234,567
+
+### Bases
+
+    0x1F        => 0x1F
+    0b1011      => 0b1011
+    0o17        => 0o17
+    0x10 + 0x10 => 0x20
+    64 in hex   => 0x40
+    64 in octal => 0o100
+    64 in binary => 0b1000000
+
+### Infinity
+
+    1 / 0       => Infinity
+    -1 / 0      => -Infinity
+    Infinity + 5 => Infinity
+
+
+## Operators
+
+### Precedence
+
+Implicit multiplication binds more tightly than explicit multiplication or
+division. These two lines are genuinely different expressions.
+
+    a = 6
+    b = 3
+
+    2a/3b       => 1.3333
+    2*a/3*b     => 12
+
+The first is `(2a)/(3b)` — 12/9. The second is `((2*a)/3)*b` — 4 times 3.
+
+Exponentiation binds tighter still, and associates to the right.
+
+    2^3^2       => 512
+    -2^2        => -4
+    2^-2        => 0.25
+
+### Comparison and logic
+
+    3 < 4       => true
+    4 <= 4      => true
+    3 != 4      => true
+    3 == 3      => true
+
+    true && false => false
+    true || false => true
+    !true         => false
+
+Numeric operands give back a number rather than a boolean.
+
+    1 && 0      => 0
+    1 || 0      => 1
+    !0          => 1
+
+De Morgan's law is applied when the operands are unknown.
+
+    !(p && q)   => !p || !q
+
+### Bitwise
+
+    0b1100 & 0b1010 => 0b1000
+    0b1100 | 0b1010 => 0b1110
+    12 & 10         => 8
+
+
+## Definitions
+
+### Plain values
+
+    count = 40
+    count + 2 => 42
+
+Names may contain spaces and digits.
+
+    cart items = 3
+    price each = 12
+    cart total = cart items * price each => 36
+
+A name cannot contain the word `in`, which is reserved for conversions.
+
+### Redefinition
+
+A definition holds an expression, not a snapshot, so redefining an input
+updates every answer that depends on it — including ones written earlier.
+
+    base   = 10
+    scaled = base * 3 => 30
+    base   = 20
+    scaled => 60
+
+### Summing a block
+
+    monthly costs +=
+
+      rent      = 1200
+      utilities = 180
+      transit   = 90
+
+    monthly costs => 1,470
+
+
+## Functions
+
+### Declared parameters
+
+    area(w, h) = w * h
+    area(3, 4)         => 12
+    area(h = 4, w = 3) => 12
+
+### Implied parameters
+
+A definition with no parameter list takes its variables in order of first
+appearance.
+
+    line = slope * x + intercept
+    line(2, 5) => intercept + 10
+
+Naming the argument avoids depending on that order.
+
+    line(x = 5) => intercept + 5 slope
+
+### Partial application
+
+Unsupplied variables stay symbolic rather than erroring.
+
+    force(mass, accel) = mass * accel
+    force(10)   => 10 accel
+
+### Recursion
+
+    fib(n) = if n < 2 then n else fib(n - 1) + fib(n - 2)
+    fib(10) => 55
+    fib(15) => 610
+
+### Local bindings
+
+    root mean square(a, b) =
+      let total = a^2 + b^2 in
+      let mean = total / 2 in
+      sqrt(mean)
+
+    root mean square(3, 4) => 3.5355
+
+### Conditionals
+
+    grade(score) =
+      if score >= 90 then "A" else
+      if score >= 80 then "B" else
+      if score >= 70 then "C" else "F"
+
+    grade(95) => "A"
+    grade(85) => "B"
+    grade(42) => "F"
+
+
+## Units
+
+### Length, mass, time
+
+    1 km in m       => 1,000 m
+    1 mile in ft    => 5,280 ft
+    1 kg in lbs     => 2.2046 lbs
+    1 lb in g       => 453.5924 g
+    1 hour in s     => 3,600 s
+    1 week in hours => 168 hours
+
+### Derived and compound
+
+    1 N in kg*m/s^2   => kg*m/s^2
+    1 J in N*m        => N*m
+    1 W * 1 s in J    => J
+    9.81 m/s^2 * 2 kg in N => 19.62 N
+
+### Cancellation
+
+Units that cancel simply disappear; no conversion is needed.
+
+    distance = 120 km
+    duration = 2 hours
+    speed    = distance / duration => 60 km/hours
+    speed in m/s                   => 16.6667 m/s
+
+### Prefixes
+
+    1 kW in W    => 1,000 W
+    1 mm in m    => 0.001 m
+    1 MB in kB   => 1,000 kB
+    2 GHz in Hz  => 2,000,000,000 Hz
+
+### Angles
+
+Trigonometry accepts an angle carrying units and converts it for you.
+
+    sin(pi/2)      => 1
+    cos(0)         => 1
+    cos(60°)       => 0.5
+    sin(30 deg)    => 0.5
+    atan(1) in °   => 45°
+
+### Percent
+
+    50% * 40    => 20
+    120 * 5%    => 6
+    1/4 in %    => 25%
+
+
+## Collections
+
+### Matrices
+
+    [1, 2, 3]                   => [1, 2, 3]
+    [1, 2; 3, 4]                => [1, 2; 3, 4]
+    [1, 2; 3, 4] * 2            => [2, 4; 6, 8]
+    [1, 2; 3, 4] * [1, 0; 0, 1] => [1, 2; 3, 4]
+    [1, 0; 0, 1]^-1             => [1, 0; 0, 1]
+    [4, 7; 2, 6]^-1             => [0.6, -0.7; -0.2, 0.4]
+    |[4, 7; 2, 6]|              => 10
+
+### Indexing
+
+Indices start at zero. A single index reads down the columns.
+
+    grid = [10, 20; 30, 40]
+
+    grid[0, 0] => 10
+    grid[0, 1] => 20
+    grid[1, 0] => 30
+    grid[1] => 30
+
+### Vectors
+
+    dot([1, 2, 3], [4, 5, 6])   => 32
+    cross([1, 0, 0], [0, 1, 0]) => [0, 0, 1]
+    |[6, 8]|                    => 10
+    len([1, 2, 3])              => 3
+
+### Ranges
+
+    1..4            => 1..4
+    map(2x, 1..4)   => [2, 4, 6, 8]
+    sum(x, x = 1..10) => 55
+
+### Higher-order functions
+
+    map(sqrt, [1, 4, 9])            => [1, 2, 3]
+    filter(x >= 0, [-2, -1, 0, 1])  => [0, 1]
+    reduce(acc * x, [1, 2, 3, 4])   => 24
+    sum([2, 4, 6])                  => 12
+    prod([2, 4, 6])                 => 48
+
+### Statistics
+
+    average(2, 4, 9)  => 5
+    mean([1, 2, 3, 4]) => 2.5
+    min([5, 2, 8])    => 2
+    max(5, 2, 8)      => 8
+    choose(5, 2)      => 10
+
+
+## Standard library
+
+    abs(-7)       => 7
+    sign(-3)      => -1
+    round(2.5)    => 2
+    round(3.5)    => 4
+    floor(-2.5)   => -3
+    ceil(-2.5)    => -2
+    truncate(-2.5) => -2
+    sqrt(144)     => 12
+    log10(1000)   => 3
+    log2(1024)    => 10
+    log(81, 3)    => 4
+    ln(1)         => 0
+    tod(3661)     => 1 hr + 1 mins + 1 s
+
+
+## Algebra
+
+### Collecting terms
+
+    x + x + x       => 3 x
+    2y - 5y         => -3 y
+    (p + q) - p     => q
+    3*(n + 2)       => 3 n + 6
+    (x + 1)*(x - 1) => x^2 - 1
+
+Products of unlike sums are left factored rather than multiplied out, because
+expanding them would make the answer longer rather than shorter.
+
+    (u + 1)*(u + 2) => (u + 1)*(u + 2)
+
+### Powers
+
+    z^2 * z^3   => z^5
+    z^4 / z^2   => z^2
+    (z^2)^3     => z^6
+    z / z       => 1
+
+### Solving
+
+    total = subtotal + tax
+    subtotal => -tax + total
+
+    2m + 10 = 30
+    m => 10
+
+    n^2 = 49
+    n => 7
+
+    p^2 + 2p - 8 = 0
+    p => [-4, 2]
+
+When a variable cannot be isolated, the closest rearrangement is reported
+instead of an error.
+
+    k^3 + k = 9 + w
+    k => k + k^3 == w + 9
+
+### Calculus
+
+    der(x^2, x)        => 2 x
+    der(x^3 + 2x, x)   => 3 x^2 + 2
+    der(cos(x), x)     => -sin(x)
+    der(exp(x), x)     => exp(x)
+    der(ln(x), x)      => 1/x
+    der(sqrt(x), x)    => 0.5/sqrt(x)
+
+### Complex numbers
+
+    i^2         => -1
+    i^3         => -i
+    i^4         => 1
+    (1 + i)^2   => 2i
+    conj(4 - 5i) => 5i + 4
+    re(3 + 7i)  => 3
+    im(3 + 7i)  => 7
+    sqrt(-25)   => 5i
+
+
+## Intervals
+
+A range doubles as a measurement with a tolerance.
+
+    length = 9.8..10.2
+    width  = 4.9..5.1
+
+    length + width => 14.7..15.3
+    length * width => 48.02..52.02
+    length^2       => 96.04..104.04
+
+
+## Document structure
+
+### Multi-line expressions
+
+An expression continues onto the next line as long as that line is indented
+further than the first.
+
+    long total
+      = 100
+      + 200
+      + 300
+      => 600
+
+### Several statements on a line
+
+    a1 = 2; b1 = 3; a1 * b1 => 6
+
+### Comments
+
+Anything after a `#` is ignored.
+
+    speed limit = 65 # miles per hour, posted
+    speed limit => 65

@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/calcium-core", "crates/calcium-cli"]
+
+# A thin root package so the corpus test in tests/ can live beside the
+# documents it reads.
+[package]
+name = "calcium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+calcium-core = { path = "crates/calcium-core" }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+
+[workspace.dependencies]
+num-bigint = "0.4"
+num-rational = "0.4"
+num-traits = "0.2"

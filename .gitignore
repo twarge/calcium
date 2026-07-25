@@ -1,0 +1,6 @@
+/target
+.DS_Store
+*.xcuserdatad
+
+# Scratch space; never committed.
+/local

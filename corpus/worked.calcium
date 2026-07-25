@@ -1,0 +1,192 @@
+# Worked examples
+
+Realistic documents rather than isolated expressions: each section is the sort
+of thing someone would actually open the app to work out. Every `=>` is a test.
+
+The numeric answers here were computed independently, with Python's exact
+`Fraction` arithmetic rounded the same way, rather than copied from this engine.
+Worth noting that the float version of the same check disagreed in the fourth
+decimal on the mortgage total: the engine keeps rationals exact until display,
+so it is the float that drifts.
+
+
+## A road trip
+
+    distance   = 420 miles
+    efficiency = 30 miles/gallon
+    fuel price = 3.45 $/gallon
+
+    fuel needed = distance / efficiency => 14 gallon
+    trip cost   = fuel needed * fuel price => $48.3
+
+Halving the efficiency doubles the cost, which is the point of writing it this
+way rather than typing the number into a calculator.
+
+    efficiency = 15 miles/gallon
+    trip cost => $96.6
+
+
+## A mortgage
+
+    price        = $425,000
+    down rate    = 20%
+    down payment = down rate * price => $85,000
+    financed     = price - down payment => $340,000
+
+    annual rate = 5.5%/year
+    term        = 30 year
+
+    payments      = term * 12/year        => 360
+    monthly rate  = annual rate/(12/year) => 0.0046
+
+The standard amortisation formula, written out.
+
+    monthly payment
+      = monthly rate/(1 - (1 + monthly rate)^(-payments)) * financed
+      => $1,930.4826
+
+Total paid over the life of the loan, and how much of it is interest:
+
+    total paid = monthly payment * payments => $694,973.7376
+    interest   = total paid - financed      => $354,973.7376
+
+
+## Compound interest
+
+    principal = 5000
+    rate      = 4.3%
+    years     = 7
+
+    balance = principal * (1 + rate)^years => 6,713.6727
+
+Solving the same relationship backwards — how long to reach a target — is not
+something the engine can isolate, since `years` sits in an exponent. It reports
+how far it got instead of failing.
+
+    doubling = principal * (1 + rate)^years == 10,000
+
+
+## Projectile motion
+
+    height(t) = 1/2*g*t^2 + v0*t + h0
+
+    g  = -9.81 m/s^2
+    v0 = 22 m/s
+    h0 = 1.5 m
+
+    height(1s) => 18.595 m
+    height(2s) => 25.88 m
+    height(3s) => 23.355 m
+
+The vertical velocity is the derivative, and it hits zero at the apex.
+
+    velocity = der(height, t) => -9.81 m*t/s^2 + 22 m/s
+
+Feeding it a bare number instead of a time leaves the units visibly
+inconsistent, which is the whole reason for carrying them:
+
+    height(1) => 1.5 m + 22 m/s - 4.905 m/s^2
+
+
+## Resistors in parallel
+
+    R1 = 220 Ω
+    R2 = 330 Ω
+
+    parallel = 1/(1/R1 + 1/R2) => 132Ω
+
+Adding a third in parallel drops it further.
+
+    R3 = 1000 Ω
+    three up = 1/(1/R1 + 1/R2 + 1/R3) => 116.6078Ω
+
+
+## How long is that download
+
+    file size = 4.7 GB
+    link rate = 25 Mbit/s
+
+    transfer time = file size / link rate in s => 1,504 s
+    transfer time in minutes                  => 25.0667 minutes
+
+Note the factor of eight: `GB` is bytes and `Mbit` is bits, and the unit system
+keeps that straight without being told.
+
+
+## Scaling a recipe
+
+    flour per cup = 125 g
+
+    flour = 350 g
+    cups  = flour / flour per cup => 2.8
+
+The grams cancel, so the answer is a plain count of cups rather than a
+quantity carrying a unit.
+
+    servings = 4
+    wanted   = 6
+
+    scale = wanted / servings => 1.5
+    flour for six = flour * scale in g => 525 g
+
+
+## Painting a room
+
+    wall width  = 12 ft
+    wall height = 9 ft
+    walls       = 4
+
+    area = wall width * wall height * walls => 432 ft^2
+
+    coverage = 350 ft^2/gallon
+    coats    = 2
+
+    paint = area * coats / coverage => 2.4686 gallon
+
+
+## Body mass index
+
+    weight = 82 kg
+    height = 1.78 m
+
+    bmi = weight / height^2 => 25.8806 kg/m^2
+
+The same document works in imperial units, because the conversion happens
+inside the definition rather than in the numbers.
+
+    weight = 180 lbs
+    height = 5 ft + 11 inch
+
+    bmi in kg/m^2 => 25.1046 kg/m^2
+
+
+## Two equations, two unknowns
+
+Written as a matrix equation and solved by inversion.
+
+    coefficients = [3, 2; 1, -1]
+    constants    = [16; 2]
+
+    coefficients * unknowns = constants
+
+    unknowns => [4; 2]
+
+Checking the answer by substitution:
+
+    3*4 + 2*2 => 16
+    4 - 2     => 2
+
+
+## A weekly budget
+
+    weekly spend +=
+
+      groceries = 145
+      transport = 40
+      coffee    = 22
+      other     = 60
+
+    weekly spend => 267
+
+    annual spend = weekly spend * 52 => 13,884
+    daily spend  = weekly spend / 7  => 38.1429
