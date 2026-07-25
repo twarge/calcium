@@ -118,6 +118,11 @@ pub struct Def {
     pub body: Expr,
     /// Prelude definitions are opaque outside of `in` conversions.
     pub is_unit: bool,
+    /// Whether this came from the prelude. A prelude body resolves its own
+    /// references against the prelude, so a document defining `T` for
+    /// temperature cannot reach inside `gauss = T/10000` and turn the tesla
+    /// into 125 °C.
+    pub from_prelude: bool,
 }
 
 impl Def {
@@ -141,6 +146,10 @@ impl Def {
 #[derive(Clone, Debug, Default)]
 pub struct Env {
     defs: HashMap<String, Def>,
+    /// The prelude as itself, untouched by document redefinitions. Bodies of
+    /// prelude definitions resolve here first — lexical scoping for the unit
+    /// table, dynamic for everything the document writes.
+    prelude: std::sync::Arc<HashMap<String, Def>>,
     /// Definition order, so the solver can search backwards through history.
     order: Vec<String>,
     /// Relations whose left side was not a plain name, e.g. `12x + 13y = 163`.
@@ -157,6 +166,9 @@ pub struct Ctx {
     /// mutually recursive definitions looping forever.
     pub active: Vec<String>,
     pub expand_units: bool,
+    /// True while expanding the body of a prelude definition, where names
+    /// resolve against the prelude before the document.
+    pub in_prelude: bool,
     /// Expression nesting budget.
     pub depth: usize,
     /// How many function applications deep we are. Recursion is allowed — the
@@ -185,6 +197,7 @@ impl Env {
 
     fn build_prelude() -> Env {
         let mut env = Env::default();
+        // Populated below, then snapshotted into `prelude`.
         // Most of the prelude is units, which stay opaque outside an `in`
         // conversion. Constants are different — `pi` and the Boltzmann constant
         // have to fold into arithmetic wherever they appear — so the file
@@ -211,7 +224,7 @@ impl Env {
                 if let Stmt::Define { name, params, body } = statement.stmt {
                     env.insert(
                         name,
-                        Def { params, body, is_unit: defining_units },
+                        Def { params, body, is_unit: defining_units, from_prelude: true },
                     );
                 }
             }
@@ -225,6 +238,7 @@ impl Env {
             .map(|(name, _)| name.clone())
             .collect();
         env.fmt.units = std::sync::Arc::new(units);
+        env.prelude = std::sync::Arc::new(env.defs.clone());
         env
     }
 
@@ -242,6 +256,7 @@ impl Env {
                 params,
                 body,
                 is_unit: false,
+                from_prelude: false,
             },
         );
     }
@@ -270,7 +285,7 @@ impl Env {
             if base.is_empty() {
                 continue;
             }
-            let Some(def) = self.defs.get(base) else {
+            let Some(def) = self.prelude.get(base) else {
                 continue;
             };
             if !def.is_unit {
@@ -291,6 +306,11 @@ impl Env {
             return def.is_unit;
         }
         self.resolve_si_prefix(name).is_some()
+    }
+
+    /// Whether the prelude defines `name`, regardless of document shadowing.
+    pub fn prelude_defines(&self, name: &str) -> bool {
+        self.prelude.contains_key(name)
     }
 
     // -- evaluation ---------------------------------------------------------
@@ -480,19 +500,35 @@ impl Env {
         if matches!(name, "Infinity" | "∞") {
             return Expr::Num(Num::infinity(), Radix::Dec);
         }
-        if let Some(def) = self.defs.get(name) {
+        // Inside a prelude body the prelude resolves first, so a document's
+        // `T = 125 degC` cannot reach inside `gauss = T/10000`.
+        let def = if ctx.in_prelude {
+            self.prelude.get(name).or_else(|| self.defs.get(name))
+        } else {
+            self.defs.get(name)
+        };
+        if let Some(def) = def {
             if def.is_unit && !ctx.expand_units {
                 return Expr::var(name);
             }
             let body = def.body.clone();
+            let was_in_prelude = ctx.in_prelude;
+            ctx.in_prelude = def.from_prelude;
             ctx.active.push(name.to_string());
             let result = self.eval_in(&body, ctx);
             ctx.active.pop();
+            ctx.in_prelude = was_in_prelude;
             return result;
         }
         if ctx.expand_units {
             if let Some(expansion) = self.resolve_si_prefix(name) {
-                return self.eval_in(&expansion, ctx);
+                // A prefixed unit is a prelude expression: `fT` must reach the
+                // tesla even when the document has its own `T`.
+                let was_in_prelude = ctx.in_prelude;
+                ctx.in_prelude = true;
+                let result = self.eval_in(&expansion, ctx);
+                ctx.in_prelude = was_in_prelude;
+                return result;
             }
         }
         Expr::var(name)
@@ -571,6 +607,7 @@ impl Env {
                         params: None,
                         body,
                         is_unit: false,
+                        from_prelude: false,
                     };
                     return self.apply(name, &def, &evaluated, ctx);
                 }
@@ -646,6 +683,7 @@ impl Env {
             locals: ctx.locals.clone(),
             active: ctx.active.clone(),
             expand_units: true,
+            in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
         };

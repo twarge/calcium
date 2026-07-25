@@ -196,8 +196,12 @@ misbehave, because solving `v = i*r` for `r` gives `v/i`, which reduces under
 byte and coulomb, and `h` is Planck's constant. A document's own definition
 always wins — `h = 3` shadows the prelude — but a name left *undefined* silently
 becomes the unit or constant rather than staying a free symbol, which is how a
-stray `K` or a `6.6261e-34` turns up in an answer. Two distinct unit symbols
-also do not compare unequal, so `if x == B` stays symbolic.
+stray `6.6261e-34` turns up in an answer. Two distinct unit symbols also do not
+compare unequal, so `if x == B` stays symbolic.
+
+Shadowing stops at the table's edge, though: prelude bodies resolve against the
+prelude, so `T = 125 degC` in a document leaves `gauss = T/10000` and the `fT`
+prefix meaning tesla. See the Shadowing section of `corpus/reference.calcium`.
 
 **A name cannot contain the word `in`,** which is reserved for conversions —
 `items in cart` parses as a conversion of `items`.

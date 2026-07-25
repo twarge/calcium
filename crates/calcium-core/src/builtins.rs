@@ -759,6 +759,7 @@ fn apply_item(env: &Env, source: &Expr, binder: &Option<String>, item: &Expr, ct
         locals: ctx.locals.clone(),
         active: ctx.active.clone(),
         expand_units: ctx.expand_units,
+        in_prelude: ctx.in_prelude,
         depth: ctx.depth,
         calls: ctx.calls,
     };
@@ -844,6 +845,7 @@ fn map(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
             locals: ctx.locals.clone(),
             active: ctx.active.clone(),
             expand_units: ctx.expand_units,
+            in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
         };
@@ -935,6 +937,7 @@ fn reduce(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
             locals: ctx.locals.clone(),
             active: ctx.active.clone(),
             expand_units: ctx.expand_units,
+            in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
         };

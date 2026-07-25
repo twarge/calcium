@@ -471,6 +471,7 @@ pub fn define_and_eval(env: &mut Env, name: &str, body: Expr) -> Expr {
             params: None,
             body,
             is_unit: false,
+            from_prelude: false,
         },
     );
     let mut ctx = Ctx::default();

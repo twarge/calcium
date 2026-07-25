@@ -519,3 +519,17 @@ Anything after a `#` is ignored.
 
     speed limit = 65 # miles per hour, posted
     speed limit => 65
+
+
+## Shadowing
+
+A name you define wins over the built-in table wherever *you* use it — but the
+table's own internal references are resolved against the table itself. Defining
+`T` as a temperature does not reach inside `gauss = T/10000` and turn the tesla
+into degrees; magnetometry documents do exactly this.
+
+    T = 125 degC
+    T in K             => 398.15 K
+    1 gauss in nT      => 100,000 nT
+    3 gauss in fT      => 300,000,000,000 fT
+    2.8024 MHz/gauss in Hz/nT => 28.024 Hz/nT
