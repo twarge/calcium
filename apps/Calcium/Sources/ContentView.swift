@@ -6,5 +6,6 @@ struct ContentView: View {
     var body: some View {
         EditorView(text: $text)
             .frame(minWidth: 480, minHeight: 320)
+            .background(WindowChrome())
     }
 }

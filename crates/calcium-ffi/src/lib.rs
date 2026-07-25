@@ -132,6 +132,9 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
                 json.push_str(",\"query\":");
                 json.push_str(&query.to_string());
             }
+            if let Some((offset, length)) = line.redefines {
+                json.push_str(&format!(",\"redefines\":[{offset},{length}]"));
+            }
             json.push('}');
         }
         json.push(']');
@@ -230,11 +233,12 @@ mod tests {
 
     #[test]
     fn reports_line_kinds() {
+        // `T = 125 degC` also *redefines* the tesla, and the report says so.
         let json = through(calcium_line_kinds, "# Head\nT = 125 degC # note\nA sentence.");
         assert_eq!(
             json,
             "[{\"kind\":\"heading\"},\
-              {\"kind\":\"code\",\"comment\":13},\
+              {\"kind\":\"code\",\"comment\":13,\"redefines\":[0,1]},\
               {\"kind\":\"prose\"}]"
         );
     }

@@ -34,6 +34,14 @@ struct EditorView: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.string = text
 
+        // Pinch on the trackpad scales the type. The recognizer spares us a
+        // text-view subclass, which would cost the system factory and its
+        // correct first paint.
+        let pinch = NSMagnificationGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
+        textView.addGestureRecognizer(pinch)
+        context.coordinator.installZoomShortcuts(for: textView)
+
         // Not synchronously: publishing answers is a state change and this is
         // still SwiftUI's view-building pass.
         DispatchQueue.main.async { context.coordinator.refresh(textView) }
@@ -103,6 +111,64 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        // MARK: Zoom
+
+        /// Scale at the moment the pinch began.
+        private var pinchBase: CGFloat = 1
+
+        @objc func pinched(_ recognizer: NSMagnificationGestureRecognizer) {
+            guard let textView = recognizer.view as? NSTextView else { return }
+            switch recognizer.state {
+            case .began:
+                pinchBase = Typography.scale
+            case .changed:
+                Typography.scale = pinchBase * (1 + recognizer.magnification)
+                rescale(textView)
+            default:
+                break
+            }
+        }
+
+        /// ⌘+ / ⌘− / ⌘0, through the same path as the pinch. Installed as a
+        /// local monitor because the coordinator is not in the responder
+        /// chain, and a text-view subclass would cost the system factory.
+        private var keyMonitor: Any?
+
+        func installZoomShortcuts(for textView: NSTextView) {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                [weak self, weak textView] event in
+                guard let self, let textView,
+                      textView.window?.isKeyWindow == true,
+                      event.modifierFlags.contains(.command),
+                      !event.modifierFlags.contains(.shift),
+                      let key = event.charactersIgnoringModifiers
+                else { return event }
+                switch key {
+                case "=", "+": self.zoom(textView, by: 1.1)
+                case "-": self.zoom(textView, by: 1 / 1.1)
+                case "0": Typography.scale = 1; self.rescale(textView)
+                default: return event
+                }
+                return nil
+            }
+        }
+
+        deinit {
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+            }
+        }
+
+        func zoom(_ textView: NSTextView, by factor: CGFloat) {
+            Typography.scale *= factor
+            rescale(textView)
+        }
+
+        private func rescale(_ textView: NSTextView) {
+            textView.font = Typography.body
+            highlight(textView, lines: Engine.lines(of: textView.string))
         }
 
         // MARK: Editing
@@ -360,6 +426,21 @@ struct EditorView: NSViewRepresentable {
                 case .code:
                     break
                 }
+                // A redefined name gets a dotted orange underline: shadowing
+                // the built-in table (`T = 125 degC` over the tesla) or an
+                // earlier definition is legal and often deliberate, but it is
+                // the kind of thing worth noticing out of the corner of an eye.
+                if let mark = line?.redefines, mark.count == 2 {
+                    let range = NSRange(location: lineRange.location + mark[0], length: mark[1])
+                    if NSMaxRange(range) <= storage.length {
+                        storage.addAttributes(
+                            [
+                                .underlineStyle: NSUnderlineStyle.thick
+                                    .union(.patternDot).rawValue,
+                                .underlineColor: NSColor.systemOrange,
+                            ], range: range)
+                    }
+                }
                 // A trailing `#` comment, from wherever the engine says it
                 // starts — a `#` inside a string or a `#?` query is not one.
                 if let offset = line?.comment {
@@ -427,7 +508,22 @@ enum Palette {
 }
 
 enum Typography {
-    static let size: CGFloat = 13
+    static let baseSize: CGFloat = 13
+
+    /// Pinch-to-zoom scale, persisted across launches. Fonts are computed
+    /// from it on each use, so changing it and re-highlighting rescales the
+    /// whole document.
+    static var scale: CGFloat = {
+        let saved = UserDefaults.standard.double(forKey: "fontScale")
+        return saved > 0 ? CGFloat(saved) : 1
+    }() {
+        didSet {
+            scale = min(max(scale, 0.5), 4)
+            UserDefaults.standard.set(Double(scale), forKey: "fontScale")
+        }
+    }
+
+    static var size: CGFloat { baseSize * scale }
 
     /// Fira Code, bundled in `Resources/Fonts` and registered by
     /// `ATSApplicationFontsPath`.
@@ -437,9 +533,9 @@ enum Typography {
     /// already mean. They are contextual alternates, so they occupy the same
     /// advance width as the characters they replace and the caret still lands
     /// between them.
-    static let body = named("FiraCode-Regular", fallback: .regular)
-    static let heading = named("FiraCode-Bold", fallback: .bold)
-    static let answer = named("FiraCode-Regular", fallback: .regular)
+    static var body: NSFont { named("FiraCode-Regular", fallback: .regular) }
+    static var heading: NSFont { named("FiraCode-Bold", fallback: .bold) }
+    static var answer: NSFont { named("FiraCode-Regular", fallback: .regular) }
 
     /// Falls back to the system monospace face if the bundled font is missing,
     /// so a broken resource copy degrades rather than crashes.

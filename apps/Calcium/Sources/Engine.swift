@@ -19,6 +19,8 @@ struct LineInfo: Decodable {
     let comment: Int?
     /// UTF-16 offset of a `#?` autocomplete request.
     let query: Int?
+    /// UTF-16 offset and length of a name this line redefines.
+    let redefines: [Int]?
 }
 
 /// The Rust engine, behind a Swift-shaped door.

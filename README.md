@@ -122,7 +122,11 @@ Four things that are easy to get wrong, each fixed because it broke in use:
   app-domain default. In a prose editor a smart quote is a nicety; here it turns
   `3 +  =>` into `3 +. =>` and a string literal into a syntax error.
 
-A line that cannot be computed still answers, in red, with the reason.
+A line that cannot be computed still answers, in red, with the reason. A name
+that *re*defines something — an earlier definition, or a built-in like the
+tesla — carries a dotted orange underline, marked by the engine so the rule
+matches what evaluation actually does. Pinch, or ⌘+/⌘−/⌘0, scales the type.
+The title bar stays hidden until the pointer moves into it.
 
 ## Architecture
 

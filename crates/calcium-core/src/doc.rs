@@ -390,12 +390,16 @@ pub struct LineInfo {
     pub comment: Option<usize>,
     /// UTF-16 offset of a `#?` autocomplete request.
     pub query: Option<usize>,
+    /// UTF-16 offset and length of a name this line *re*defines — one that
+    /// the prelude already provides, or that the document defined earlier.
+    /// The tesla incident is why an editor wants to mark these.
+    pub redefines: Option<(usize, usize)>,
 }
 
 /// How each source line reads, with its comment, one entry per line.
 pub fn line_info(source: &str) -> Vec<LineInfo> {
     let kinds = line_kinds(source);
-    source
+    let mut infos: Vec<LineInfo> = source
         .lines()
         .enumerate()
         .map(|(i, line)| {
@@ -412,9 +416,44 @@ pub fn line_info(source: &str) -> Vec<LineInfo> {
                     BlockKind::Code => crate::lexer::query_start(line),
                     _ => None,
                 },
+                redefines: None,
             }
         })
-        .collect()
+        .collect();
+
+    // Second pass for redefinitions, which need document order: a name is a
+    // redefinition if the prelude provides it or an earlier block defined it.
+    let env = Env::with_prelude();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let lines: Vec<&str> = source.lines().collect();
+    for block in split_blocks(source) {
+        if block.kind != BlockKind::Code {
+            continue;
+        }
+        for statement in parse_line(&joined(&block)) {
+            let name = match &statement.stmt {
+                Stmt::Define { name, .. } => name.clone(),
+                Stmt::SumDefine { name } => name.clone(),
+                _ => continue,
+            };
+            let already = seen.contains(&name) || env.prelude_defines(&name);
+            if already {
+                // The name sits on the block's first line, textually before
+                // its `=`; the first occurrence is the definition site.
+                if let Some(line) = lines.get(block.line) {
+                    if let Some(byte) = line.find(name.as_str()) {
+                        let offset = line[..byte].encode_utf16().count();
+                        let length = name.encode_utf16().count();
+                        if let Some(slot) = infos.get_mut(block.line) {
+                            slot.redefines = Some((offset, length));
+                        }
+                    }
+                }
+            }
+            seen.insert(name);
+        }
+    }
+    infos
 }
 
 /// How each source line reads, one entry per line.
@@ -546,6 +585,22 @@ mod tests {
         let info = line_info("speed of light = #?");
         assert_eq!(info[0].kind, BlockKind::Code);
         assert_eq!(info[0].query, Some(17));
+    }
+
+    #[test]
+    fn redefinitions_are_marked_where_they_happen() {
+        let source = [
+            "    price = 3",     // fresh: unmarked
+            "    price = 4",     // redefines the document's own name
+            "    T = 125 degC",  // shadows the tesla
+            "    fresh = T",     // uses, does not define: unmarked
+        ]
+        .join("\n");
+        let info = line_info(&source);
+        assert_eq!(info[0].redefines, None);
+        assert_eq!(info[1].redefines, Some((4, 5)));
+        assert_eq!(info[2].redefines, Some((4, 1)));
+        assert_eq!(info[3].redefines, None);
     }
 
     #[test]
