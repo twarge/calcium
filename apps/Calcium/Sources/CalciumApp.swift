@@ -98,12 +98,13 @@ struct CalciumApp: App {
         // curly one turns a string literal into a syntax error, and `--`
         // becoming an em dash breaks subtraction. Each one leaves the author
         // staring at a line that looks right and does not work.
+        // Spelling correction is deliberately absent: the editor manages it
+        // per-view, offered in prose and withheld from calculations.
         for key in [
             "NSAutomaticPeriodSubstitutionEnabled",
             "NSAutomaticQuoteSubstitutionEnabled",
             "NSAutomaticDashSubstitutionEnabled",
             "NSAutomaticTextReplacementEnabled",
-            "NSAutomaticSpellingCorrectionEnabled",
             "NSAutomaticCapitalizationEnabled",
             "NSAutomaticTextCompletionEnabled",
         ] {

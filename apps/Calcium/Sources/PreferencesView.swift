@@ -3,16 +3,18 @@ import SwiftUI
 
 /// The Settings window (⌘,).
 ///
-/// Three settings, which is all the app has that is genuinely configurable:
-/// the type size that ⌘0 returns to, whether Fira Code's ligatures draw, and
-/// whether the title bar hides until hovered. Everything else the format
-/// itself decides per-document (`@precision`, `@group`) and does not belong
-/// in app-wide preferences.
+/// Only what is genuinely configurable app-wide: the type size that ⌘0
+/// returns to, the faces and ligatures, proofing, and whether the title bar
+/// hides until hovered. Everything else the format itself decides
+/// per-document (`@precision`, `@group`) and does not belong in app-wide
+/// preferences.
 struct PreferencesView: View {
     @AppStorage("baseFontSize") private var fontSize = 13.0
     @AppStorage("ligatures") private var ligatures = true
     @AppStorage("proseSystemFont") private var proseSystemFont = true
     @AppStorage("hideTitleBar") private var hideTitleBar = true
+    @AppStorage("proseSpelling") private var proseSpelling = true
+    @AppStorage("proseAutocorrect") private var proseAutocorrect = true
 
     var body: some View {
         Form {
@@ -40,6 +42,17 @@ struct PreferencesView: View {
                 .foregroundStyle(.secondary)
             } header: {
                 Text("Type")
+            }
+
+            Section {
+                Toggle("Check spelling in prose", isOn: $proseSpelling)
+                Toggle("Correct spelling automatically", isOn: $proseAutocorrect)
+                    .disabled(!proseSpelling)
+                Text("Sentences, headings, and comments are checked; calculations are never touched.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Proofing")
             }
 
             Section {

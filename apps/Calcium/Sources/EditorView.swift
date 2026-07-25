@@ -43,6 +43,7 @@ struct EditorView: NSViewRepresentable {
 
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         configure(textView)
+        context.coordinator.applyProofing(to: textView)
         textView.delegate = context.coordinator
         textView.string = text
 
@@ -94,18 +95,18 @@ struct EditorView: NSViewRepresentable {
         // Every automatic substitution is off. This is a document of
         // expressions: a smart quote, an em dash, or the system's
         // double-space-inserts-a-period will each turn a working line into a
-        // syntax error, and the author will not see why.
+        // syntax error, and the author will not see why. Spelling is the one
+        // exception — enabled below per the preference, and confined to prose
+        // by the delegate, where the same reasoning runs the other way:
+        // sentences deserve the system's proofing, symbols must never get it.
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isAutomaticTextCompletionEnabled = false
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isAutomaticDataDetectionEnabled = false
-        textView.isContinuousSpellCheckingEnabled = false
         textView.isGrammarCheckingEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.enabledTextCheckingTypes = 0
 
         // The same find bar TextEdit uses: find, replace, replace all, and
         // incremental highlighting as you type the search term.
@@ -142,6 +143,72 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        // MARK: Proofing
+
+        /// Spelling and correction only. Quotes, dashes, replacements and the
+        /// rest stay off even in prose: they rewrite characters, and a prose
+        /// line is one ` = ` away from becoming a calculation.
+        static let proseCheckingTypes: NSTextCheckingTypes =
+            NSTextCheckingResult.CheckingType.spelling.rawValue
+                | NSTextCheckingResult.CheckingType.correction.rawValue
+
+        /// Where the checker may look: prose and heading lines, and the
+        /// comment tail of code lines. Rebuilt by every `highlight`, so
+        /// exactly as current as the styling.
+        private var checkableRanges: [NSRange] = []
+        /// The text length those ranges were computed against; a mismatch
+        /// means the checker raced an edit, and the answer is to check
+        /// nothing rather than the wrong thing.
+        private var checkableTextLength = 0
+
+        func applyProofing(to textView: NSTextView) {
+            let spelling = UserDefaults.standard.object(forKey: "proseSpelling") as? Bool ?? true
+            let correct = UserDefaults.standard.object(forKey: "proseAutocorrect") as? Bool ?? true
+            textView.isContinuousSpellCheckingEnabled = spelling
+            textView.isAutomaticSpellingCorrectionEnabled = spelling && correct
+            textView.enabledTextCheckingTypes = spelling ? Self.proseCheckingTypes : 0
+        }
+
+        /// The system checker announces each range it is about to check;
+        /// ranges that touch no prose are declined outright.
+        func textView(
+            _ textView: NSTextView,
+            willCheckTextIn range: NSRange,
+            options: [NSSpellChecker.OptionKey: Any],
+            types checkingTypes: UnsafeMutablePointer<NSTextCheckingTypes>
+        ) -> [NSSpellChecker.OptionKey: Any] {
+            guard checkableTextLength == (textView.string as NSString).length,
+                  checkableRanges.contains(where: { NSIntersectionRange($0, range).length > 0 })
+            else {
+                checkingTypes.pointee = 0
+                return options
+            }
+            checkingTypes.pointee &= Self.proseCheckingTypes
+            return options
+        }
+
+        /// A checked range can still straddle prose and code — the checker
+        /// works in its own chunks — so each finding is kept only if it lies
+        /// wholly inside prose.
+        func textView(
+            _ textView: NSTextView,
+            didCheckTextIn range: NSRange,
+            types checkingTypes: NSTextCheckingTypes,
+            options: [NSSpellChecker.OptionKey: Any],
+            results: [NSTextCheckingResult],
+            orthography: NSOrthography,
+            wordCount: Int
+        ) -> [NSTextCheckingResult] {
+            guard checkableTextLength == (textView.string as NSString).length else { return [] }
+            return results.filter { result in
+                result.range.location != NSNotFound
+                    && checkableRanges.contains {
+                        result.range.location >= $0.location
+                            && NSMaxRange(result.range) <= NSMaxRange($0)
+                    }
+            }
         }
 
         // MARK: Chrome inset
@@ -284,6 +351,7 @@ struct EditorView: NSViewRepresentable {
             ) { [weak self, weak textView] _ in
                 guard let self, let textView else { return }
                 self.rescale(textView)
+                self.applyProofing(to: textView)
             }
         }
 
@@ -578,6 +646,7 @@ struct EditorView: NSViewRepresentable {
 
             let text = storage.string as NSString
             var index = 0
+            var checkable: [NSRange] = []
             text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
                 _, lineRange, _, _ in
                 defer { index += 1 }
@@ -588,6 +657,7 @@ struct EditorView: NSViewRepresentable {
                         .font,
                         value: Typography.proseHeading(self.scale, level: line?.level ?? 1),
                         range: lineRange)
+                    checkable.append(lineRange)
                 case .prose:
                     // Prose sits back a little so the calculations carry the
                     // page — and, by default, in the system's own face, so
@@ -597,8 +667,19 @@ struct EditorView: NSViewRepresentable {
                             .font: Typography.prose(self.scale),
                             .foregroundColor: NSColor.secondaryLabelColor,
                         ], range: lineRange)
+                    checkable.append(lineRange)
                 case .code:
-                    break
+                    // A code line's comment tail is prose too, as far as the
+                    // spelling checker is concerned.
+                    if let offset = line?.comment {
+                        let start = lineRange.location + offset
+                        if NSMaxRange(lineRange) > start {
+                            checkable.append(
+                                NSRange(
+                                    location: start,
+                                    length: NSMaxRange(lineRange) - start))
+                        }
+                    }
                 }
                 // A redefined name gets a dotted orange underline: shadowing
                 // the built-in table (`T = 125 degC` over the tesla) or an
@@ -638,6 +719,8 @@ struct EditorView: NSViewRepresentable {
                     ], range: region.range)
             }
             storage.endEditing()
+            checkableRanges = checkable
+            checkableTextLength = storage.length
         }
 
         /// Which line a character offset falls on.
