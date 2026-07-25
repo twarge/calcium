@@ -250,13 +250,22 @@ struct EditorView: NSViewRepresentable {
                 // ranges of edits already recorded there. Undo has to step over
                 // the user's own typing and nothing else.
                 undoManager.disableUndoRegistration()
-                defer { undoManager.enableUndoRegistration() }
                 storage.beginEditing()
                 for edit in edits.sorted(by: { $0.range.location > $1.range.location }) {
                     storage.replaceCharacters(in: edit.range, with: edit.replacement)
                     selection = adjust(selection, for: edit)
                 }
                 storage.endEditing()
+
+                // Tell the text view its text changed. Mutating the storage
+                // directly bypasses the path that normally does this, so
+                // layout below the edit is never invalidated: the rest of the
+                // page stops drawing until a scroll or a caret move forces it
+                // back. Called while `isSplicing` still holds, so the
+                // notification is not mistaken for the user's own edit.
+                textView.didChangeText()
+
+                undoManager.enableUndoRegistration()
                 isSplicing = false
             }
 

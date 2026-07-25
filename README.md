@@ -108,6 +108,9 @@ Four things that are easy to get wrong, each fixed because it broke in use:
   and Cmd-Z silently does nothing.
 - **Anything reasoning about where an answer sits reads the live text**, never a
   cached range. Cached ranges are one refresh out of date while you type.
+- **The splice ends with `didChangeText()`.** Mutating the text storage directly
+  bypasses the path that normally invalidates layout, so everything below the
+  edit stops drawing until a scroll or a caret move brings it back.
 - **Prose is coloured by asking the engine**, through `calcium_line_kinds`,
   rather than by a second heuristic in the editor. The rule is subtler than it
   looks — an unindented `T = 125 degC` is a calculation, an unindented sentence
