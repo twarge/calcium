@@ -159,6 +159,12 @@ coordinator's splice: answers written in after `=>` when typing pauses, caret
 adjusted across every edit. Serve the directory from any static host and it
 embeds in a page as an iframe or a div.
 
+`./apps/deploy-web.sh` installs the demo into the twargeweb site: the wasm and
+script into `source/calcium/`, Fira Code as woff2 (converted from the bundled
+TTFs) into `source/fonts/firacode/` with its licence. The page itself —
+`source/calcium/index.md`, the demo in a drawn Mac window — belongs to the site
+repo; the script never overwrites it.
+
 ## Architecture
 
 Two observations shaped everything, and both remove machinery you would
