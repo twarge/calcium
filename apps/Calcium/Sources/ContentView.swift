@@ -11,6 +11,11 @@ struct ContentView: View {
 
     var body: some View {
         EditorView(text: $text, fileURL: fileURL)
+            // The editor's surface reaches the top of the window; the scroll
+            // view pins its own top content inset to the chrome height. With
+            // both in place the toolbar overlays the text, so hiding it in
+            // distraction-free mode frees its area without anything reflowing.
+            .ignoresSafeArea(.container, edges: .top)
             .frame(minWidth: 480, minHeight: 320)
             .background(
                 WindowChrome(isEnabled: hideTitleBar) { chromeHidden = $0 }

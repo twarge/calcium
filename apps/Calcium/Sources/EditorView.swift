@@ -31,6 +31,16 @@ struct EditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
 
+        // The editor ignores the top safe area, so this scroll view reaches
+        // the top of the window — which also stops AppKit insetting it under
+        // the toolbar automatically. Pin the inset ourselves instead, to the
+        // chrome height, and keep it whether or not the chrome is showing:
+        // the toolbar then overlays the text, and distraction-free hiding it
+        // frees its area without the text ever shifting.
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(
+            top: Coordinator.fallbackChromeHeight, left: 0, bottom: 0, right: 0)
+
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         configure(textView)
         textView.delegate = context.coordinator
@@ -46,8 +56,12 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.followPreferences(of: textView)
 
         // Not synchronously: publishing answers is a state change and this is
-        // still SwiftUI's view-building pass.
-        DispatchQueue.main.async { context.coordinator.refresh(textView) }
+        // still SwiftUI's view-building pass. By the time this runs the view
+        // is in its window, which the inset measurement needs.
+        DispatchQueue.main.async {
+            context.coordinator.measureChromeInset(of: scrollView)
+            context.coordinator.refresh(textView)
+        }
         return scrollView
     }
 
@@ -128,6 +142,38 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        // MARK: Chrome inset
+
+        /// The unified title-bar-plus-toolbar height on every recent macOS,
+        /// used until the window can be measured.
+        static let fallbackChromeHeight: CGFloat = 52
+
+        private var chromeObservation: NSKeyValueObservation?
+
+        /// Measures the window chrome and pins the scroll view's top inset to
+        /// it — measured, not assumed, in case a future toolbar style changes
+        /// the height. `contentLayoutRect` shrinks to nothing while the
+        /// chrome is hidden, so the inset only ever ratchets upward: the
+        /// pinned value is the chrome's height when *visible*, which is what
+        /// the text must clear.
+        func measureChromeInset(of scrollView: NSScrollView) {
+            guard chromeObservation == nil, let window = scrollView.window else { return }
+            chromeObservation = window.observe(\.contentLayoutRect, options: [.initial]) {
+                [weak scrollView] window, _ in
+                guard let scrollView, let contentView = window.contentView else { return }
+                let measured = contentView.frame.height - window.contentLayoutRect.height
+                let current = scrollView.contentInsets.top
+                guard measured > current else { return }
+                // If the view is resting at the top, keep it resting at the
+                // new top rather than leaving the first line under the chrome.
+                let atTop = scrollView.contentView.bounds.origin.y <= -(current - 1)
+                scrollView.contentInsets.top = measured
+                if atTop {
+                    scrollView.documentView?.scroll(NSPoint(x: 0, y: -measured))
+                }
+            }
         }
 
         // MARK: Per-document view state
