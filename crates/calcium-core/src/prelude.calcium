@@ -66,12 +66,25 @@ nmi = 1852 m
 angstrom = 1e-10 m
 au = 149597870700 m
 lightyear = 9460730472580800 m
+ly = lightyear
+Å = angstrom
+mil = inch/1000
+rod = 33 ft/2
+chain = 66 ft
+link = chain/100
+furlong = 220 yard
+furlongs = furlong
+fathom = 6 ft
+fathoms = fathom
 parsec = 30856775814913673 m
 
 ## Area and volume
 
 are = 100 m^2
 hectare = 100 are
+hectares = hectare
+ha = hectare
+acres = acre
 acre = 4046.8564224 m^2
 liter = m^3/1000
 liters = liter
@@ -85,6 +98,7 @@ quart = gallon/4
 quarts = quart
 pint = gallon/8
 pints = pint
+cc = (m/100)^3
 cup = gallon/16
 cups = cup
 floz = cup/8
@@ -111,6 +125,13 @@ oz = lb/16
 ounce = oz
 ounces = oz
 stone = 14 lb
+ct = gram/5
+carat = ct
+carats = ct
+grain = 6479891 kg/100000000000
+grains = grain
+dram = oz/16
+drams = dram
 slug = 14.593902937 kg
 
 ## Time
@@ -131,6 +152,13 @@ days = day
 week = 7 day
 weeks = day * 7
 fortnight = 2 week
+wk = week
+wks = week
+century = 100 year
+centuries = century
+decade = 10 year
+decades = decade
+millennium = 1000 year
 year = 365.2425 day
 years = year
 yr = year
@@ -164,6 +192,14 @@ pascal = Pa
 bar = 100000 Pa
 atm = 101325 Pa
 psi = lbf/inch^2
+psf = lbf/ft^2
+ksi = 1000 psi
+at = 98066.5 Pa
+barye = Pa/10
+inHg = 3386.389 Pa
+cmHg = 1333.224 Pa
+inH2O = 249.0889 Pa
+ftH2O = 2989.067 Pa
 torr = atm/760
 mmHg = torr
 J = N*m
@@ -176,6 +212,10 @@ calories = cal
 kcal = 1000 cal
 Cal = kcal
 BTU = 1055.05585262 J
+Wh = W*hour
+therm = 100000 BTU
+quad = 1000000000000000 BTU
+TNT = 4184000000 J
 eV = 1.602176634e-19 J
 W = J/s
 watt = W
@@ -237,9 +277,79 @@ bpm = 1/minute
 mph = mile/hour
 mpg = mile/gallon
 kmph = 1000 m/hour
+kph = kmph
+kmh = kmph
+mach = 340.29 m/s
 knot = nmi/hour
+knots = knot
+kn = knot
 G = 6.67430e-11 m^3/kg/s^2
 g0 = 9.80665 m/s^2
+
+## Magnetism
+
+gauss = T/10000
+Mx = Wb/100000000
+maxwell = Mx
+oersted = 1000 A/(4*pi*m)
+Oe = oersted
+
+## Photometry
+#
+# `cd` is a base unit; the rest follow from it.
+
+candela = cd
+candelas = cd
+sr = rad^2
+steradian = sr
+steradians = sr
+lm = cd*sr
+lumen = lm
+lumens = lm
+lx = lm/m^2
+lux = lx
+nit = cd/m^2
+nits = nit
+footcandle = lm/ft^2
+fc = footcandle
+lambert = 10000 cd/(pi*m^2)
+footlambert = cd/(pi*ft^2)
+fL = footlambert
+
+## Radioactivity
+
+Bq = 1/s
+becquerel = Bq
+Ci = 37000000000 Bq
+curie = Ci
+rd = 1000000 Bq
+rutherford = rd
+Gy = J/kg
+gray = Gy
+Sv = J/kg
+sievert = Sv
+roentgen = 0.000258 C/kg
+
+## Capitalised spellings
+#
+# The long forms are commonly written with a leading capital after the person
+# they are named for.
+
+Newton = N
+Joule = J
+Watt = W
+Volt = V
+Ampere = A
+Coulomb = C
+Tesla = T
+Weber = Wb
+Henry = H
+Farad = F
+Siemens = S
+Pascal = Pa
+Kelvin = K
+Hertz = Hz
+Gauss = gauss
 
 ## Currency
 #

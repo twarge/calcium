@@ -198,6 +198,17 @@ the lexer only *reads* invariant-culture numbers, so `beta = 12 000,62` fails.
 **Currency rates** are a fixed snapshot and belong behind a refresh mechanism
 before anyone relies on them for money.
 
+**No offset units.** `degC` and `degF` cannot be expressed, because a unit here
+is a *definition* and conversion is multiplication — there is nowhere to put the
++273.15. It is the one place the "a unit is just a definition" idea does not
+reach. Kelvin works, since it scales from zero like everything else.
+
+**The unit table is a table**, and will always be missing something. Adding a
+unit is one line in
+[`prelude.calcium`](crates/calcium-core/src/prelude.calcium); SI prefixes are
+applied programmatically, so defining `T` is enough to get `nT`, `mT` and `kT`
+for free.
+
 **Not implemented.** `plot(...)` passes through untouched for a UI layer to pick
 up; `#?` (AI autocomplete) parses but does not resolve; heading-scoped
 definitions are flat rather than scoped.

@@ -228,6 +228,27 @@ Units that cancel simply disappear; no conversion is needed.
     speed    = distance / duration => 60 km/hours
     speed in m/s                   => 16.6667 m/s
 
+### Magnetism, light and radiation
+
+    1 gauss in nT          => 100,000 nT
+    1 T in gauss           => 10,000 gauss
+    1 maxwell in Wb        => 1e-8 Wb
+    10 lux in lm/m^2       => 10 lm/m^2
+    1 curie in becquerel   => 37,000,000,000 becquerel
+    2 Sv in J/kg           => 2 J/kg
+
+### More of the everyday ones
+
+    1 hectare in m^2       => 10,000 m^2
+    1 furlong in ft        => 660 ft
+    1 fathom in ft         => 6 ft
+    1 carat in mg          => 200 mg
+    1 century in years     => 100 years
+    1 kWh in J             => 3,600,000 J
+    1 inHg in Pa           => 3,386.389 Pa
+    1 mach in m/s          => 340.29 m/s
+    1 Newton in kg*m/s^2   => kg*m/s^2
+
 ### Prefixes
 
     1 kW in W    => 1,000 W
