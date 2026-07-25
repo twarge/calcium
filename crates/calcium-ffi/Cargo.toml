@@ -1,0 +1,15 @@
+[package]
+name = "calcium-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "C ABI for the Calcium engine"
+
+[lib]
+name = "calcium_ffi"
+# staticlib for linking into an app bundle; rlib so the tests below can run.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+calcium-core = { path = "../calcium-core" }

@@ -1,0 +1,66 @@
+name: Calcium
+options:
+  bundleIdPrefix: com.twarge
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+targets:
+  Calcium:
+    type: application
+    platform: macOS
+    sources:
+      - path: Calcium/Sources
+    settings:
+      base:
+        PRODUCT_NAME: Calcium
+        PRODUCT_BUNDLE_IDENTIFIER: com.twarge.calcium
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # The Rust engine: a static library plus its C header, reached through
+        # a module map so Swift can `import CalciumFFI`.
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../target/$(CONFIGURATION_RUST)"
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
+        OTHER_LDFLAGS: "-lcalcium_ffi"
+      configs:
+        Debug:
+          CONFIGURATION_RUST: debug
+        Release:
+          CONFIGURATION_RUST: release
+    info:
+      path: Calcium/Info.plist
+      properties:
+        CFBundleName: Calcium
+        LSMinimumSystemVersion: "14.0"
+        NSHighResolutionCapable: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Calcium Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.twarge.calcium.document]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.twarge.calcium.document
+            UTTypeDescription: Calcium Document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [calcium]
+    preBuildScripts:
+      - name: Build Rust engine
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          cd "$SRCROOT/.."
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          if [ "$CONFIGURATION" = "Release" ]; then
+            cargo build --release -p calcium-ffi
+          else
+            cargo build -p calcium-ffi
+          fi

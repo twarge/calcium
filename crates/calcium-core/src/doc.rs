@@ -237,11 +237,17 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                     .unwrap_or(block.line + block.lines.len() - 1);
                 arrow_index += 1;
                 let value = result.unwrap_or_else(|| Expr::Error("no result".to_string()));
-                let is_error = holds_error(&value);
+                // An error anywhere in the result makes the whole answer an
+                // error, and the message alone is far more use than the
+                // half-built expression it was found in.
+                let text = match first_error(&value) {
+                    Some(message) => message,
+                    None => render_with(&value, &env.fmt),
+                };
                 answers.push(Answer {
                     line,
-                    text: render_with(&value, &env.fmt),
-                    is_error,
+                    text,
+                    is_error: holds_error(&value),
                 });
             }
         }
@@ -264,6 +270,22 @@ struct PendingSum {
 impl PendingSum {
     fn close(self, env: &mut Env) {
         env.define(&self.name, None, Expr::add(self.parts));
+    }
+}
+
+/// The first error message in a result, if there is one.
+fn first_error(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Error(message) => Some(message.clone()),
+        Expr::Add(items) | Expr::Mul(items) => items.iter().find_map(first_error),
+        Expr::Matrix(rows) => rows.iter().flatten().find_map(first_error),
+        Expr::Pow(a, b) | Expr::Convert(a, b) | Expr::Relation(a, b) => {
+            first_error(a).or_else(|| first_error(b))
+        }
+        Expr::Call(_, args) => args.iter().find_map(|a| first_error(&a.value)),
+        Expr::Abs(a) | Expr::Not(a) | Expr::Transpose(a) => first_error(a),
+        Expr::If(c, t, f) => first_error(c).or_else(|| first_error(t)).or_else(|| first_error(f)),
+        _ => None,
     }
 }
 
@@ -356,6 +378,34 @@ pub fn rewrite(source: &str) -> String {
     lines.join("\n")
 }
 
+/// Removes the answer after every `=>`, leaving the arrow in place.
+///
+/// The editor keeps answers out of the text buffer while you type — they are
+/// shown alongside instead — and materializes them again on save. Stripping
+/// here rather than in the UI keeps one implementation of "which `=>` is real",
+/// including the rule that an arrow inside `inline code` is prose.
+pub fn strip_answers(source: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for line in source.lines() {
+        if !crate::check::outside_code_spans(line).contains("=>") {
+            out.push(line.to_string());
+            continue;
+        }
+        match line.find("=>") {
+            Some(at) => {
+                let head = &line[..at];
+                out.push(format!("{head}=>").trim_end().to_string());
+            }
+            None => out.push(line.to_string()),
+        }
+    }
+    let mut text = out.join("\n");
+    if source.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
 /// Evaluates a definition body eagerly, used by tests and tooling.
 pub fn define_and_eval(env: &mut Env, name: &str, body: Expr) -> Expr {
     env.insert(
@@ -411,6 +461,39 @@ mod tests {
     expenses => 0";
         let document = evaluate(source);
         assert_eq!(document.answers.last().unwrap().text, "950");
+    }
+
+    #[test]
+    fn strips_and_restores_answers() {
+        let source = "    x = 2\n    x + 3 => 5\nProse mentioning `=>` stays put.";
+        let stripped = strip_answers(source);
+        assert_eq!(
+            stripped,
+            "    x = 2\n    x + 3 =>\nProse mentioning `=>` stays put."
+        );
+        // Round trip: stripping then rewriting reproduces the answers.
+        assert_eq!(rewrite(&stripped), source);
+    }
+
+    #[test]
+    fn stripping_is_idempotent_and_keeps_trailing_newline() {
+        let source = "    1 + 1 => 2\n";
+        let once = strip_answers(source);
+        assert_eq!(once, "    1 + 1 =>\n");
+        assert_eq!(strip_answers(&once), once);
+    }
+
+    #[test]
+    fn a_broken_line_still_answers_when_an_arrow_was_asked_for() {
+        // Neither of these can be computed — one fails to tokenize, the other
+        // to parse — but both asked for an answer, and silence would leave the
+        // author with no idea why nothing happened.
+        for source in ["    3 + . =>", "    1 + 2 * =>", "    5 m in kg =>"] {
+            let answers = evaluate(source).answers;
+            assert_eq!(answers.len(), 1, "no answer for {source:?}");
+            assert!(answers[0].is_error, "not flagged as an error: {source:?}");
+            assert!(!answers[0].text.is_empty(), "empty message for {source:?}");
+        }
     }
 
     #[test]

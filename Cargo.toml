@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/calcium-core", "crates/calcium-cli"]
+members = ["crates/calcium-core", "crates/calcium-cli", "crates/calcium-ffi"]
 
 # A thin root package so the corpus test in tests/ can live beside the
 # documents it reads.

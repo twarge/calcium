@@ -1,0 +1,4 @@
+module CalciumFFI {
+    header "calcium.h"
+    export *
+}

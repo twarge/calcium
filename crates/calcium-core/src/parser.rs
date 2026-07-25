@@ -38,10 +38,14 @@ pub fn parse_line(src: &str) -> Vec<Statement> {
     let tokens = match lex(src) {
         Ok(tokens) => tokens,
         Err(err) => {
+            // The line does not tokenize, so nothing downstream can run — but
+            // if the author wrote `=>` they still asked for an answer, and
+            // silence is the least useful thing to give them.
+            let arrow = crate::check::outside_code_spans(src).contains("=>");
             return vec![Statement {
                 stmt: Stmt::Expr(Expr::Error(err.message)),
-                arrow: false,
-            }]
+                arrow,
+            }];
         }
     };
     Parser {
@@ -597,6 +601,12 @@ impl Parser {
                 "let" => self.let_expr(),
                 _ => self.name_or_call(),
             },
+            // A statement terminator here means the expression simply ran
+            // out. Do *not* consume it: the caller still has to see the `=>`,
+            // or a line the author asked for an answer on gets none at all.
+            Tok::Arrow | Tok::Semi | Tok::Eof => {
+                Expr::Error("expected a value".to_string())
+            }
             other => {
                 self.bump();
                 Expr::Error(format!("unexpected {other:?}"))

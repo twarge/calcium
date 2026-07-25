@@ -1,7 +1,8 @@
 # Calcium
 
 A Markdown text editor where any line can be a calculation, recomputed as you
-type. Write `2 + 2 =>` and the answer appears in the document text:
+type. Write `2 + 2 =>` and the answer appears beside it — and is saved into the
+file:
 
 ```
     distance   = 420 miles
@@ -15,19 +16,21 @@ type. Write `2 + 2 =>` and the answer appears in the document text:
 Change `efficiency` and every answer below it updates. The file is plain
 Markdown, so it can be mailed, committed to git, or opened in any editor.
 
-The engine is Rust; the macOS/iOS UI will be Swift on top of it. See
+A Rust engine with a Swift document app on top. See
 [Why Rust with a Swift UI](#why-rust-with-a-swift-ui) for where the split falls.
 
 ```
 crates/calcium-core/    the engine — lexer, parser, simplifier, solver, units
+crates/calcium-ffi/     C ABI: three functions over String -> String
 crates/calcium-cli/     `calcium run` / `calcium check`
+apps/Calcium/           the macOS app
 corpus/                 hand-written test documents
 tests/golden.rs         runs the corpus as a regression test
 ```
 
 ## Status
 
-96 unit tests, plus 261 end-to-end expectations in `corpus/`, all passing.
+105 unit tests, plus 261 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|
@@ -58,7 +61,32 @@ It also caught the engine being *right* where a first-pass float calculation was
 wrong: the mortgage total in `worked.calcium` differs in the fourth decimal
 between exact rationals and floats, and the engine has the exact one.
 
-No UI yet. That is the next step.
+## The app
+
+```bash
+./apps/build.sh            # debug
+./apps/build.sh release
+```
+
+A document-based macOS app: `DocumentGroup`, an `NSTextView`, and the answers
+drawn in a column down the right, each aligned to the line its `=>` sits on.
+
+**Answers are not in the buffer while you edit.** They are stripped on open and
+written back on save, so the file on disk stays self-contained and readable
+anywhere, while the editor never rewrites text under the cursor. Putting them in
+the buffer would mean editing the document on every keystroke, which fights
+selection, undo and typing. This is the decision that was open before the app
+existed; see [Next steps](#next-steps) for what it costs.
+
+Two things that are easy to get wrong and are handled:
+
+- **Every automatic substitution is off**, including the system's
+  double-space-inserts-a-period, which has no per-view property and needs an
+  app-domain default. In a prose editor a smart quote is a nicety; here it turns
+  `3 +  =>` into `3 +. =>` and a string literal into a syntax error.
+- **A line that cannot be computed still answers**, in red, with the reason. A
+  lex or parse failure used to swallow the `=>` and print nothing at all, which
+  left the author with no idea why the line had gone quiet.
 
 ## Architecture
 
@@ -155,8 +183,13 @@ does not apply.
 
 Three reasons, in order of weight:
 
-1. **The FFI surface is tiny and pure.** At document scale you could serialize
-   the result as JSON and never measure the cost.
+1. **The FFI surface is tiny and pure.** It came out at three functions —
+   evaluate, rewrite, strip — hand-written in
+   [`calcium-ffi`](crates/calcium-ffi/src/lib.rs) rather than generated, because
+   a code generator would have added a build step, a version to keep in sync and
+   a layer to debug through, in exchange for marshalling that fits on one
+   screen. Answers cross as JSON and the cost is not measurable at document
+   scale.
 2. **Exact arithmetic.** A CAS needs exact rationals and bignums or
    simplification drifts. `num-rational` + `num-bigint` hand you this; in Swift
    you would be writing BigInt. This argument holds even without a Linux port.
@@ -166,15 +199,12 @@ Three reasons, in order of weight:
 
 ## Next steps
 
-- **Swift app.** `DocumentGroup` + TextKit 2, bridged with UniFFI. The engine
-  already exposes the shape needed: `doc::evaluate` returns answers with line
-  numbers, and `doc::rewrite` produces the updated buffer.
-- **Decide where answers live.** Writing `=> 4` into the document text means the
-  app rewrites the buffer on every keystroke, with real UX edges around undo
-  coalescing and cursor preservation. The alternative is to render answers in a
-  gutter and only materialize them into text on save or export. The first is
-  truer to the format; the second is easier to get right. Worth picking
-  deliberately before writing UI code.
+- **iOS.** The engine already builds for `aarch64-apple-ios`; the document model
+  is shared and only the editor view is AppKit.
+- **The cost of answers-in-a-gutter.** The editing buffer differs from the file,
+  which is invisible in normal use but shows up at the edges: an external change
+  to a file with answers already in it, or a merge conflict, is reconciled
+  against stripped text. Worth revisiting if it bites.
 - **Incremental evaluation.** `cargo run --release -p calcium-cli --example bench`
   reports the cost of re-evaluating a document from scratch: ~2.6 ms for the
   420-line reference, of which 0.3 ms is the prelude. Fine for ordinary
