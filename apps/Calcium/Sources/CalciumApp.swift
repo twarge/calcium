@@ -41,7 +41,7 @@ private struct FindCommands: View {
         let sender = NSMenuItem()
         sender.tag = action.rawValue
         NSApp.sendAction(
-            Selector(("performTextFinderAction:")), to: nil, from: sender)
+            #selector(NSResponder.performTextFinderAction(_:)), to: nil, from: sender)
     }
 }
 #endif
