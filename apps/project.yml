@@ -30,15 +30,14 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         # The Rust engine: a static library plus its C header, reached through
         # a module map so Swift can `import CalciumFFI`.
-        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../target/$(CONFIGURATION_RUST)"
+        # Always the release engine, even in a Debug app build. Unoptimised,
+        # evaluating a document takes six times as long — enough for the editor
+        # to feel it — and the Rust is exercised by `cargo test`, not by
+        # stepping through it from Xcode. Swift stays debuggable either way.
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../target/release"
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
         HEADER_SEARCH_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
         OTHER_LDFLAGS: "-lcalcium_ffi"
-      configs:
-        Debug:
-          CONFIGURATION_RUST: debug
-        Release:
-          CONFIGURATION_RUST: release
     info:
       path: Calcium/Info.plist
       properties:
@@ -84,8 +83,4 @@ targets:
           set -euo pipefail
           cd "$SRCROOT/.."
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
-          if [ "$CONFIGURATION" = "Release" ]; then
-            cargo build --release -p calcium-ffi
-          else
-            cargo build -p calcium-ffi
-          fi
+          cargo build --release -p calcium-ffi

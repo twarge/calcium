@@ -297,9 +297,24 @@ S = A/V
 siemens = S
 
 ## Temperature
+#
+# These are the *sizes* of the degrees, which is all a definition can express:
+# a Celsius degree is a kelvin, a Fahrenheit degree is five ninths of one. That
+# makes `J/degC` correctly equal to `J/K`, and a difference of temperatures
+# come out right.
+#
+# Where they measure *from* is not expressible here — there is nowhere in a
+# multiplication to put an addition — so the zero point lives in the engine and
+# is applied by `in`. See AFFINE_UNITS in eval.rs.
 
 kelvin = K
 kelvins = K
+degC = K
+celsius = degC
+degF = 5 K/9
+fahrenheit = degF
+degR = 5 K/9
+rankine = degR
 
 ## Information
 

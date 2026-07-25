@@ -22,6 +22,13 @@ edition = "2021"
 rust-version = "1.80"
 license = "MIT"
 
+# Dependencies compiled optimised even in a debug build. The engine leans on
+# num-bigint and num-rational for every arithmetic step, and unoptimised they
+# make a debug build eight times slower to evaluate a document — enough for the
+# editor to feel it. Our own crates stay unoptimised and debuggable.
+[profile.dev.package."*"]
+opt-level = 2
+
 [workspace.dependencies]
 num-bigint = "0.4"
 num-rational = "0.4"

@@ -228,6 +228,29 @@ Units that cancel simply disappear; no conversion is needed.
     speed    = distance / duration => 60 km/hours
     speed in m/s                   => 16.6667 m/s
 
+### Temperature
+
+Conversion between scales that measure from different zeros is affine, which a
+unit definition cannot express, so the zero points live in the engine and are
+applied by `in`.
+
+    25 degC in K           => 298.15 K
+    0 degC in K            => 273.15 K
+    100 degC in degF       => 212 degF
+    -40 degC in degF       => -40 degF
+    300 K in degC          => 26.85 degC
+
+The *sizes* of the degrees are ordinary definitions, so a Celsius degree is a
+kelvin and heat capacities come out right:
+
+    4.18 J/degC in J/K     => 4.18 J/K
+
+That is also the catch. Outside a conversion `degC` is a degree-sized unit, not
+a reading, so a difference of two temperatures converts as though it were
+absolute. `(30 degC - 20 degC) in K` answers `283.15 K`, not `10 K`. Telling
+the two apart would mean tracking absolute and relative quantities separately
+throughout the algebra.
+
 ### Pressure and gas density
 
     1 torr in Pa           => 133.3224 Pa

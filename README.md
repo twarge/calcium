@@ -262,8 +262,14 @@ Three reasons, in order of weight:
   during. That delay is what keeps the splice out of the text view's input
   handling; narrowing it means making the splice interruptible instead.
 - **Incremental evaluation.** `cargo run --release -p calcium-cli --example bench`
-  reports the cost of re-evaluating a document from scratch: ~2.6 ms for the
-  420-line reference, of which 0.3 ms is the prelude. Fine for ordinary
-  documents, but it scales worse than linearly, and a file several times longer
-  would need either per-block caching or evaluation off the main thread before
-  it kept up with typing.
+  reports the cost of re-evaluating a document from scratch: ~4 ms for the
+  500-line reference. Fine for ordinary documents, but it scales worse than
+  linearly, and a file several times longer would need either per-block caching
+  or evaluation off the main thread before it kept up with typing.
+
+  Two things are already done. The prelude is parsed once into a shared
+  environment and cloned per evaluation — it is four hundred definitions that
+  never change, and re-parsing them was a sixth of every keystroke. And the app
+  links the *release* engine even in a Debug build, because unoptimised the
+  engine is six times slower and the editor feels it; the Rust is exercised by
+  `cargo test` rather than by stepping through it from Xcode.

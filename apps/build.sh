@@ -8,13 +8,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 CONFIG="${1:-debug}"
 case "$CONFIG" in
-  debug)   XC_CONFIG=Debug;   CARGO_FLAGS="" ;;
-  release) XC_CONFIG=Release; CARGO_FLAGS="--release" ;;
+  debug)   XC_CONFIG=Debug ;;
+  release) XC_CONFIG=Release ;;
   *) echo "usage: $0 [debug|release]" >&2; exit 2 ;;
 esac
 
-echo "==> Rust engine ($CONFIG)"
-(cd .. && cargo build $CARGO_FLAGS -p calcium-ffi)
+# The engine is always built optimised: it is exercised by `cargo test` rather
+# than by stepping through it, and unoptimised it is six times slower to
+# evaluate a document.
+echo "==> Rust engine (release)"
+(cd .. && cargo build --release -p calcium-ffi)
 
 echo "==> Xcode project"
 xcodegen generate --quiet

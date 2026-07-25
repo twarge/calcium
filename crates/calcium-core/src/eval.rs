@@ -79,6 +79,37 @@ const SI_PREFIXES: &[(&str, i32)] = &[
     ("yocto", -24),
 ];
 
+/// Units that measure from a different zero, as `(name, degree size in K,
+/// zero point in K)` — a reading `x` is `x * size + zero` kelvin.
+///
+/// This is the one thing the "a unit is just a definition" idea cannot reach.
+/// Everything else in the prelude is a scale factor, and conversion is
+/// division; an offset has nowhere to live in a product. So the sizes stay in
+/// the prelude, where they belong and where they make `J/degC` equal `J/K`,
+/// and only the zero points are here, applied by `in` and nowhere else.
+///
+/// The consequence, and it is a real one: `25 degC` is a *size* of 25 degrees
+/// everywhere except under a conversion. That keeps `T2 - T1` right and makes
+/// `25 degC + 25 degC` meaningless-but-defined, which is the trade most
+/// practical tools make.
+const AFFINE_UNITS: &[(&str, (i64, i64), (i64, i64))] = &[
+    ("K", (1, 1), (0, 1)),
+    ("kelvin", (1, 1), (0, 1)),
+    ("kelvins", (1, 1), (0, 1)),
+    ("degC", (1, 1), (27315, 100)),
+    ("celsius", (1, 1), (27315, 100)),
+    ("degF", (5, 9), (229835, 900)),
+    ("fahrenheit", (5, 9), (229835, 900)),
+    ("degR", (5, 9), (0, 1)),
+    ("rankine", (5, 9), (0, 1)),
+];
+
+fn affine_unit(name: &str) -> Option<(Num, Num)> {
+    AFFINE_UNITS.iter().find(|(n, _, _)| *n == name).map(|(_, size, zero)| {
+        (Num::ratio(size.0, size.1), Num::ratio(zero.0, zero.1))
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct Def {
     /// `None` means the parameter list is implied by the body's free
@@ -136,9 +167,23 @@ pub struct Ctx {
 const MAX_DEPTH: usize = 512;
 const MAX_CALLS: usize = 256;
 
+/// The prelude, parsed once.
+///
+/// It is four hundred definitions and it does not change, but a document is
+/// re-evaluated on every pause in typing — so parsing it each time was a
+/// sixth of the cost of every keystroke, and grew with every unit added.
+static PRELUDE_ENV: std::sync::OnceLock<Env> = std::sync::OnceLock::new();
+
 impl Env {
     /// An environment preloaded with the unit and currency prelude.
+    ///
+    /// A clone of the shared one: the caller goes on to add the document's own
+    /// definitions, so it needs a copy it can write to.
     pub fn with_prelude() -> Env {
+        PRELUDE_ENV.get_or_init(Env::build_prelude).clone()
+    }
+
+    fn build_prelude() -> Env {
         let mut env = Env::default();
         // Most of the prelude is units, which stay opaque outside an `in`
         // conversion. Constants are different — `pi` and the Boltzmann constant
@@ -578,6 +623,13 @@ impl Env {
     /// *displayed* unit is the expression as the author wrote it — which is
     /// why `2 ton in sacks` answers in `sacks` and not in kilograms.
     fn eval_convert(&self, value: &Expr, unit: &Expr, ctx: &mut Ctx) -> Expr {
+        // Temperature first: between two units that measure from different
+        // zeros the conversion is affine, which the division below cannot
+        // express.
+        if let Some(result) = self.convert_temperature(value, unit, ctx) {
+            return result;
+        }
+
         // `in hex`, `in binary`, `in base 8` change the display radix instead.
         if let Some(radix) = radix_of(unit) {
             let evaluated = self.eval_in(value, ctx);
@@ -651,6 +703,60 @@ impl Env {
             render(&expanded_value),
             render(&expanded_unit)
         ))
+    }
+}
+
+impl Env {
+    /// `25 degC in K`, and the rest of the affine conversions.
+    ///
+    /// Returns `None` unless *both* sides name a temperature scale, so
+    /// everything else falls through to ordinary division.
+    fn convert_temperature(&self, value: &Expr, unit: &Expr, ctx: &mut Ctx) -> Option<Expr> {
+        let Expr::Var(target) = unit else { return None };
+        let (to_size, to_zero) = affine_unit(target)?;
+
+        // Which scale the value is written in. Found from the expression, not
+        // from its value: `0 degC` evaluates to plain `0`, because multiplying
+        // a unit by zero quite reasonably discards it, and by then there is no
+        // temperature left to convert.
+        let from = self.temperature_scale_of(value, 0)?;
+        let (from_size, from_zero) = affine_unit(&from)?;
+
+        // The reading is then whatever the value measures in those degrees.
+        let reading = simplify(&self.eval_in(
+            &Expr::div(value.clone(), Expr::var(&from)),
+            ctx,
+        ));
+        let reading = reading.as_num()?;
+
+        // To kelvin, then back out into the target scale.
+        let kelvin = reading.mul(&from_size).add(&from_zero);
+        let converted = kelvin.sub(&to_zero).div(&to_size);
+        Some(simplify(&Expr::mul(vec![
+            Expr::Num(converted, Radix::Dec),
+            Expr::var(target),
+        ])))
+    }
+
+    /// The temperature scale an expression is written in, looking through names
+    /// to the definitions behind them.
+    fn temperature_scale_of(&self, expr: &Expr, depth: usize) -> Option<String> {
+        if depth > 8 {
+            return None;
+        }
+        match expr {
+            Expr::Var(name) => {
+                if affine_unit(name).is_some() {
+                    return Some(name.clone());
+                }
+                let def = self.defs.get(name)?;
+                self.temperature_scale_of(&def.body, depth + 1)
+            }
+            Expr::Mul(items) | Expr::Add(items) => items
+                .iter()
+                .find_map(|item| self.temperature_scale_of(item, depth + 1)),
+            _ => None,
+        }
     }
 }
 
