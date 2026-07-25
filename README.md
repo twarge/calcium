@@ -206,12 +206,25 @@ reach. Kelvin works, since it scales from zero like everything else.
 **The unit table is a table**, and will always be missing something. Adding a
 unit is one line in
 [`prelude.calcium`](crates/calcium-core/src/prelude.calcium); SI prefixes are
-applied programmatically, so defining `T` is enough to get `nT`, `mT` and `kT`
-for free.
+applied programmatically in both symbol and spelled-out form, so defining `T`
+gives `nT`, `mT`, `kT` and `nanotesla` for free — and `parsec` gives you
+`attoparsec`.
+
+Physical constants live there too, spelled out in words rather than symbols:
+`h` is the henry, `e` is Euler's number, and `k` and `R` are far too useful as
+variables to spend on Boltzmann and the gas constant. So it is
+`boltzmann constant`, `speed of light`, `bohr magneton`. The prelude switches
+between the two kinds with a `#!constants` / `#!units` marker, because a
+constant must fold into arithmetic wherever it appears while a unit must stay
+symbolic until an `in` conversion asks otherwise.
 
 **Not implemented.** `plot(...)` passes through untouched for a UI layer to pick
-up; `#?` (AI autocomplete) parses but does not resolve; heading-scoped
-definitions are flat rather than scoped.
+up, and `#?` (AI autocomplete) parses but does not resolve.
+
+Headings are presentational only — they do not scope names. There is one
+namespace, and a redefinition wins from that point down. That matches Calca,
+whose own documents define `weight`, `r` and `n` under several headings each and
+expect the latest value throughout.
 
 ## Why Rust with a Swift UI
 

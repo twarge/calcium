@@ -25,12 +25,13 @@ use std::collections::HashMap;
 
 const PRELUDE: &str = include_str!("prelude.calcium");
 
-/// Prelude names that are ordinary constants rather than units: they expand
-/// everywhere, not just under an `in` conversion.
-const PRELUDE_CONSTANTS: &[&str] = &["pi", "π", "tau", "e", "phi", "%"];
-
 /// SI magnitude prefixes, applied programmatically so the prelude does not
 /// have to enumerate `PW`, `nW`, `µW` and friends.
+///
+/// Both the symbols and the spelled-out forms, so `nanosecond`, `kilogram` and
+/// `microcentury` resolve as readily as `ns`, `kg` and `µW`. Symbols are tried
+/// first because they are far commoner; a name that matches neither falls
+/// through to being an ordinary free symbol.
 const SI_PREFIXES: &[(&str, i32)] = &[
     ("Y", 24),
     ("Z", 21),
@@ -54,6 +55,28 @@ const SI_PREFIXES: &[(&str, i32)] = &[
     ("a", -18),
     ("z", -21),
     ("y", -24),
+    // Spelled-out forms.
+    ("yotta", 24),
+    ("zetta", 21),
+    ("exa", 18),
+    ("peta", 15),
+    ("tera", 12),
+    ("giga", 9),
+    ("mega", 6),
+    ("kilo", 3),
+    ("hecto", 2),
+    ("deka", 1),
+    ("deca", 1),
+    ("deci", -1),
+    ("centi", -2),
+    ("milli", -3),
+    ("micro", -6),
+    ("nano", -9),
+    ("pico", -12),
+    ("femto", -15),
+    ("atto", -18),
+    ("zepto", -21),
+    ("yocto", -24),
 ];
 
 #[derive(Clone, Debug)]
@@ -117,15 +140,34 @@ impl Env {
     /// An environment preloaded with the unit and currency prelude.
     pub fn with_prelude() -> Env {
         let mut env = Env::default();
+        // Most of the prelude is units, which stay opaque outside an `in`
+        // conversion. Constants are different — `pi` and the Boltzmann constant
+        // have to fold into arithmetic wherever they appear — so the file
+        // switches modes with a marker comment rather than the engine keeping a
+        // list of exceptions.
+        let mut defining_units = true;
         for line in PRELUDE.lines() {
             let trimmed = line.trim();
+            match trimmed {
+                "#!constants" => {
+                    defining_units = false;
+                    continue;
+                }
+                "#!units" => {
+                    defining_units = true;
+                    continue;
+                }
+                _ => {}
+            }
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
             for statement in parse_line(trimmed) {
                 if let Stmt::Define { name, params, body } = statement.stmt {
-                    let is_unit = !PRELUDE_CONSTANTS.contains(&name.as_str());
-                    env.insert(name, Def { params, body, is_unit });
+                    env.insert(
+                        name,
+                        Def { params, body, is_unit: defining_units },
+                    );
                 }
             }
         }

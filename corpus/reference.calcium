@@ -249,12 +249,46 @@ Units that cancel simply disappear; no conversion is needed.
     1 mach in m/s          => 340.29 m/s
     1 Newton in kg*m/s^2   => kg*m/s^2
 
+### Older and stranger lengths
+
+    1 cubit in inch        => 18 inch
+    1 hand in inch         => 4 inch
+    1 league in miles      => 3 miles
+    1 barleycorn in inch   => 0.3333 inch
+    12 point in inch       => 0.1667 inch
+    1 smoot in inch        => 67 inch
+
+### Time, likewise
+
+    1 shake in ns          => 10 ns
+    1 beat in s            => 86.4 s
+    1 lustrum in years     => 5 years
+    1 sidereal day in s    => 86,164.0905 s
+
+### Physical constants
+
+Spelled out in words, so they collide with nothing. `h` is the henry, `e` is
+Euler's number, and `k` is too useful as a variable to spend on Boltzmann.
+
+    speed of light in m/s          => 299,792,458 m/s
+    1 amu in kg                    => 1.6605e-27 kg
+    1 barn in m^2                  => 1e-28 m^2
+    boltzmann constant * 300 K in J => 4.1419e-21 J
+
 ### Prefixes
 
     1 kW in W    => 1,000 W
     1 mm in m    => 0.001 m
     1 MB in kB   => 1,000 kB
     2 GHz in Hz  => 2,000,000,000 Hz
+
+Spelled-out prefixes work too, which is how the joke units land.
+
+    1 kilogram in g            => 1,000 g
+    1 nanosecond in s          => 1e-9 s
+    1 attoparsec in cm         => 3.0857 cm
+    1 nanocentury in s         => 3.1557 s
+    1 microcentury in minutes  => 52.5949 minutes
 
 ### Angles
 

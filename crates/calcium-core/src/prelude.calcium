@@ -31,8 +31,10 @@ $ = $
 
 ## Mathematical constants
 #
-# These are marked as constants rather than units, so they expand everywhere
-# instead of staying symbolic.
+# Constants, not units: they fold into arithmetic wherever they appear rather
+# than staying symbolic until an `in` conversion.
+
+#!constants
 
 pi = 3.14159265358979323846264338327950288
 π = pi
@@ -43,6 +45,8 @@ phi = 1.61803398874989484820458683436563812
 ## Dimensionless
 
 % = 1/100
+
+#!units
 
 ## Length
 
@@ -76,6 +80,32 @@ furlong = 220 yard
 furlongs = furlong
 fathom = 6 ft
 fathoms = fathom
+barleycorn = inch/3
+digit = 3 inch/4
+nail = 9 inch/4
+palm = 3 inch
+hand = 4 inch
+hands = hand
+shaftment = 6 inch
+span = 9 inch
+cubit = 18 inch
+cubits = cubit
+pace = 5 ft/2
+ell = 45 inch
+league = 3 mile
+leagues = league
+cable = nmi/10
+smoot = 67 inch
+smoots = smoot
+micron = m/1000000
+microns = micron
+fermi = 1e-15 m
+point = inch/72
+points = point
+pica = 12 point
+picas = pica
+twip = point/20
+rack unit = 7 inch/4
 parsec = 30856775814913673 m
 
 ## Area and volume
@@ -94,6 +124,12 @@ L = liter
 gallon = 3.785411784 liter
 gallons = gallon
 gal = gallon
+imperial gallon = 4.54609 liter
+firkin = 9 imperial gallon
+firkins = firkin
+hogshead = 63 gallon
+gill = 4 floz
+jigger = 3 floz/2
 quart = gallon/4
 quarts = quart
 pint = gallon/8
@@ -154,6 +190,15 @@ weeks = day * 7
 fortnight = 2 week
 wk = week
 wks = week
+shake = 1e-8 s
+moment = 90 s
+beat = 86.4 s
+beats = beat
+lustrum = 5 year
+olympiad = 4 year
+julian year = 365.25 day
+sidereal day = 86164.0905 s
+sidereal year = 365.256363004 day
 century = 100 year
 centuries = century
 decade = 10 year
@@ -293,6 +338,9 @@ Mx = Wb/100000000
 maxwell = Mx
 oersted = 1000 A/(4*pi*m)
 Oe = oersted
+Gs = gauss
+gamma = nT
+gammas = nT
 
 ## Photometry
 #
@@ -350,6 +398,58 @@ Pascal = Pa
 Kelvin = K
 Hertz = Hz
 Gauss = gauss
+
+## Physical constants
+#
+# Written out in words, which is what multi-word names are for: `h` is already
+# the henry, `e` is Euler's number, and `k` and `R` are far too useful as
+# variables to spend on Boltzmann and the gas constant. CODATA 2018; the
+# SI-defining ones are exact.
+
+#!constants
+
+speed of light = 299792458 m/s
+planck constant = 6.62607015e-34 J*s
+reduced planck constant = planck constant/(2*pi)
+hbar = reduced planck constant
+boltzmann constant = 1.380649e-23 J/K
+avogadro number = 6.02214076e23/mol
+gas constant = 8.314462618 J/(mol*K)
+elementary charge = 1.602176634e-19 C
+electron mass = 9.1093837015e-31 kg
+proton mass = 1.67262192369e-27 kg
+neutron mass = 1.67492749804e-27 kg
+vacuum permeability = 1.25663706212e-6 N/A^2
+vacuum permittivity = 8.8541878128e-12 F/m
+bohr magneton = 9.2740100783e-24 J/T
+nuclear magneton = 5.0507837461e-27 J/T
+bohr radius = 5.29177210903e-11 m
+rydberg constant = 10973731.568160/m
+fine structure = 7.2973525693e-3
+stefan boltzmann = 5.670374419e-8 W/(m^2*K^4)
+gravitational constant = 6.67430e-11 m^3/(kg*s^2)
+
+#!units
+
+## Atomic and nuclear
+#
+# `barn` is a real nuclear cross-section unit, and `shed` and `outhouse` are
+# real subdivisions of it — exactly as serious as they sound.
+
+Da = 1.66053906660e-27 kg
+dalton = Da
+amu = Da
+barn = 1e-28 m^2
+barns = barn
+shed = 1e-24 barn
+outhouse = 1e-6 barn
+
+## Planck scale
+
+planck length = 1.616255e-35 m
+planck time = 5.391247e-44 s
+planck mass = 2.176434e-8 kg
+planck temperature = 1.416784e32 K
 
 ## Currency
 #
