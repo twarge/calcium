@@ -4,3 +4,6 @@
 
 # Scratch space; never committed.
 /local
+
+# Web demo: built artifact, regenerate with apps/build-web.sh
+web/calcium_ffi.wasm

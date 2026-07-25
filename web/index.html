@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calcium</title>
+<style>
+  /* Fira Code, as in the app. Falls back to system mono while it loads. */
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap');
+
+  :root {
+    --page: #ffffff;
+    --ink: #1d1d1f;
+    --dim: #86868b;
+    --comment: #61788f;
+    --error: #d0342c;
+    --accent: #e58900;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #1e1e1e;
+      --ink: #f5f5f7;
+      --dim: #8e8e93;
+      --comment: #758ca3;
+      --error: #ff6b5e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--page); }
+
+  .sheet {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+    height: 100%;
+  }
+  /* The trick: a backdrop renders the coloured text, and a transparent-text
+     textarea sits exactly on top of it carrying the caret and the editing.
+     Same font, same metrics, so they align glyph for glyph. */
+  .backdrop, textarea {
+    position: absolute;
+    inset: 0;
+    padding: 48px 40px;
+    font: 15px/1.5 "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-ligatures: contextual;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: auto;
+  }
+  .backdrop { color: var(--ink); pointer-events: none; }
+  textarea {
+    background: transparent;
+    color: transparent;
+    caret-color: var(--ink);
+    border: none;
+    outline: none;
+    resize: none;
+    width: 100%;
+    height: 100%;
+  }
+  .prose   { color: var(--dim); }
+  .heading { font-weight: 700; }
+  .comment { color: var(--comment); }
+  .answer  { color: var(--dim); }
+  .error   { color: var(--error); }
+  .redef   { text-decoration: underline wavy var(--accent) 1px; text-underline-offset: 3px; }
+  .loading {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--dim); font: 14px ui-monospace, monospace;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="backdrop" id="backdrop"></div>
+    <textarea id="editor" spellcheck="false" autocapitalize="off"
+              autocomplete="off" autocorrect="off"></textarea>
+    <div class="loading" id="loading">loading the engine…</div>
+  </div>
+  <script type="module" src="calcium.js"></script>
+</body>
+</html>

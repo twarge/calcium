@@ -29,6 +29,16 @@ license = "MIT"
 [profile.dev.package."*"]
 opt-level = 2
 
+# The web build: size first. Native release builds keep the default profile —
+# this one is selected explicitly by build-web.sh.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [workspace.dependencies]
 num-bigint = "0.4"
 num-rational = "0.4"

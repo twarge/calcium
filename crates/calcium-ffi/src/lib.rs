@@ -142,6 +142,28 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
     })
 }
 
+/// Allocates `len` bytes for the caller to write into, used by the wasm
+/// embedding: JavaScript cannot call `malloc`, so the module exports its own
+/// way in. Pair with [`calcium_dealloc`]. The native apps never need this —
+/// `withCString` hands memory across directly.
+#[no_mangle]
+pub extern "C" fn calcium_alloc(len: usize) -> *mut u8 {
+    let mut buffer = Vec::with_capacity(len.max(1));
+    let ptr = buffer.as_mut_ptr();
+    std::mem::forget(buffer);
+    ptr
+}
+
+/// Releases a buffer from [`calcium_alloc`].
+///
+/// # Safety
+/// `ptr` must come from `calcium_alloc(len)` with the same `len`, not yet
+/// freed.
+#[no_mangle]
+pub unsafe extern "C" fn calcium_dealloc(ptr: *mut u8, len: usize) {
+    drop(Vec::from_raw_parts(ptr, 0, len.max(1)));
+}
+
 /// Frees a string returned by this library. Ignores null.
 ///
 /// # Safety

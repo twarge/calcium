@@ -145,6 +145,20 @@ tesla — carries a dotted orange underline, marked by the engine so the rule
 matches what evaluation actually does. Pinch, or ⌘+/⌘−/⌘0, scales the type.
 The title bar stays hidden until the pointer moves into it.
 
+## The web demo
+
+```bash
+./apps/build-web.sh     # builds the wasm engine into web/
+```
+
+`web/` is a static page — the same engine compiled to WebAssembly (~360 KB,
+~130 KB gzipped), speaking the same C-string ABI over linear memory, with no
+wasm-bindgen and no build tooling beyond cargo. The editor is a `<textarea>`
+over a colour-rendered backdrop, running a JavaScript port of the Swift
+coordinator's splice: answers written in after `=>` when typing pauses, caret
+adjusted across every edit. Serve the directory from any static host and it
+embeds in a page as an iframe or a div.
+
 ## Architecture
 
 Two observations shaped everything, and both remove machinery you would
