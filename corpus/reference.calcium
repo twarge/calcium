@@ -214,9 +214,9 @@ Unsupplied variables stay symbolic rather than erroring.
 
 ### Derived and compound
 
-    1 N in kg*m/s^2   => kg*m/s^2
-    1 J in N*m        => N*m
-    1 W * 1 s in J    => J
+    1 N in kg*m/s^2   => 1 kg*m/s^2
+    1 J in N*m        => 1 N*m
+    1 W * 1 s in J    => 1 J
     9.81 m/s^2 * 2 kg in N => 19.62 N
 
 ### Cancellation
@@ -227,6 +227,19 @@ Units that cancel simply disappear; no conversion is needed.
     duration = 2 hours
     speed    = distance / duration => 60 km/hours
     speed in m/s                   => 16.6667 m/s
+
+### Pressure and gas density
+
+    1 torr in Pa           => 133.3224 Pa
+    1 Torr in Pa           => 133.3224 Pa
+    1 atm in Torr          => 760 Torr
+    1000 mTorr in Torr     => 1 Torr
+    760 torr in atm        => 1 atm
+    1 amagat in 1/m^3      => 2.6868e25/m^3
+    1 amg in 1/cm^3        => 2.6868e19/cm^3
+
+A conversion that lands on exactly one still prints the one: a bare `atm`
+reads as though the conversion failed.
 
 ### Magnetism, light and radiation
 
@@ -247,7 +260,7 @@ Units that cancel simply disappear; no conversion is needed.
     1 kWh in J             => 3,600,000 J
     1 inHg in Pa           => 3,386.389 Pa
     1 mach in m/s          => 340.29 m/s
-    1 Newton in kg*m/s^2   => kg*m/s^2
+    1 Newton in kg*m/s^2   => 1 kg*m/s^2
 
 ### Older and stranger lengths
 

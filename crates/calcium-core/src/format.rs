@@ -66,6 +66,13 @@ pub fn render(expr: &Expr) -> String {
 
 pub fn render_with(expr: &Expr, fmt: &NumFormat) -> String {
     let mut out = String::new();
+    // A whole result that is nothing but a unit still has a magnitude of one,
+    // and dropping it makes a conversion look like it failed: `760 torr in atm`
+    // should answer `1 atm`, not `atm`. Only at the top level — a bare `m`
+    // inside a larger expression is a symbol, not a quantity.
+    if matches!(expr, Expr::Var(name) if fmt.units.contains(name)) {
+        out.push_str("1 ");
+    }
     write_expr(&mut out, expr, Prec::Lowest, fmt);
     out
 }
@@ -469,6 +476,13 @@ fn write_product(out: &mut String, factors: &[Expr], fmt: &NumFormat) {
         }
     }
 
+    // Whether this product measures something, which decides if a magnitude of
+    // exactly one is worth printing.
+    let names_a_unit = numerator
+        .iter()
+        .chain(denominator.iter())
+        .any(|f| mentions_unit(f, fmt));
+
     let mut body = String::new();
     if let Some(coefficient) = &coefficient {
         let text = match coefficient {
@@ -478,10 +492,6 @@ fn write_product(out: &mut String, factors: &[Expr], fmt: &NumFormat) {
         // `1 x` reads as `x`; `-1 x` as `-x`. But a unit keeps its
         // coefficient — `1 hr` and `1 kg*m/s^2` would otherwise lose the
         // number entirely.
-        let names_a_unit = numerator
-            .iter()
-            .chain(denominator.iter())
-            .any(|f| mentions_unit(f, fmt));
         let is_one = coefficient.as_num().map(|n| n.abs().is_one()).unwrap_or(false)
             && !names_a_unit;
         if is_one && !numerator.is_empty() {
@@ -518,6 +528,11 @@ fn write_product(out: &mut String, factors: &[Expr], fmt: &NumFormat) {
 
     if body.is_empty() {
         body.push('1');
+    } else if coefficient.is_none() && names_a_unit {
+        // A quantity of exactly one still has a magnitude, and dropping it
+        // makes a conversion look like it failed: `760 torr in atm` should
+        // answer `1 atm`, not `atm`.
+        body.insert_str(0, "1 ");
     }
 
     if let Some(currency) = currency {

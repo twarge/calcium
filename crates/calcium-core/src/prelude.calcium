@@ -246,7 +246,9 @@ cmHg = 1333.224 Pa
 inH2O = 249.0889 Pa
 ftH2O = 2989.067 Pa
 torr = atm/760
+Torr = torr
 mmHg = torr
+mmH2O = 9.80665 Pa
 J = N*m
 joule = J
 joules = J
@@ -430,6 +432,16 @@ stefan boltzmann = 5.670374419e-8 W/(m^2*K^4)
 gravitational constant = 6.67430e-11 m^3/(kg*s^2)
 
 #!units
+
+## Gas density
+#
+# The amagat is a number density: one amagat is the density of an ideal gas at
+# 0 °C and one atmosphere, which is the Loschmidt constant.
+
+amagat = 2.6867811e25/m^3
+amagats = amagat
+amg = amagat
+loschmidt constant = amagat
 
 ## Atomic and nuclear
 #
