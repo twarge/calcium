@@ -17,7 +17,12 @@ struct EditorViewIOS: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        // TextKit 1, matching the Mac editor and for the same reason: the
+        // per-keystroke attribute rewrites and behind-the-view splices this
+        // editor performs crash TextKit 2's viewport layout
+        // (`NSTextContentStorage locationFromLocation:withOffset:` with a
+        // null location). iOS has the explicit opt-out initializer.
+        let textView = UITextView(usingTextLayoutManager: false)
         textView.font = TypographyIOS.body
         textView.backgroundColor = .systemBackground
         textView.alwaysBounceVertical = true

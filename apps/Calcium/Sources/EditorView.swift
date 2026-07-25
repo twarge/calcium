@@ -62,6 +62,16 @@ struct EditorView: NSViewRepresentable {
     }
 
     private func configure(_ textView: NSTextView) {
+        // TextKit 1, deliberately. This editor rewrites storage attributes on
+        // every keystroke and splices characters in behind the view's back —
+        // under the default TextKit 2 stack that eventually trips a known
+        // crash, `-[NSTextContentStorage locationFromLocation:withOffset:]
+        // received invalid location (null)`, when viewport layout walks a
+        // fragment whose locations the edits invalidated. Apple's response to
+        // the matching Feedback was to use TextKit 1; reading `layoutManager`
+        // is the documented downgrade. Nothing here uses TextKit 2 API.
+        _ = textView.layoutManager
+
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = Typography.body(1)
