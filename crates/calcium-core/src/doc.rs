@@ -119,7 +119,11 @@ fn classify(line: &str) -> BlockKind {
     }
     // An explicit `=>` always means the author wants an answer — unless it is
     // inside `inline code`, where the prose is talking *about* the operator.
-    if crate::check::outside_code_spans(trimmed).contains("=>") {
+    // `#?` likewise: it is an autocomplete request, and it must win over the
+    // sentence-punctuation test below, which would otherwise read the `?` as
+    // the end of a question.
+    let outside = crate::check::outside_code_spans(trimmed);
+    if outside.contains("=>") || outside.contains("#?") {
         return BlockKind::Code;
     }
     // Otherwise: prose if it ends with sentence punctuation.
@@ -378,6 +382,41 @@ pub fn rewrite(source: &str) -> String {
     lines.join("\n")
 }
 
+/// How a source line reads, and where its comment starts if it has one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineInfo {
+    pub kind: BlockKind,
+    /// UTF-16 offset of a trailing `#` comment within the line.
+    pub comment: Option<usize>,
+    /// UTF-16 offset of a `#?` autocomplete request.
+    pub query: Option<usize>,
+}
+
+/// How each source line reads, with its comment, one entry per line.
+pub fn line_info(source: &str) -> Vec<LineInfo> {
+    let kinds = line_kinds(source);
+    source
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let kind = kinds.get(i).copied().unwrap_or(BlockKind::Prose);
+            LineInfo {
+                kind,
+                // Only a calculation can carry these; a `#` on a prose line is
+                // Markdown, and at the start of one it is a heading.
+                comment: match kind {
+                    BlockKind::Code => crate::lexer::comment_start(line),
+                    _ => None,
+                },
+                query: match kind {
+                    BlockKind::Code => crate::lexer::query_start(line),
+                    _ => None,
+                },
+            }
+        })
+        .collect()
+}
+
 /// How each source line reads, one entry per line.
 ///
 /// Exposed so an editor can colour prose differently from calculations without
@@ -499,6 +538,25 @@ mod tests {
         let once = strip_answers(source);
         assert_eq!(once, "    1 + 1 =>\n");
         assert_eq!(strip_answers(&once), once);
+    }
+
+    #[test]
+    fn an_autocomplete_request_is_code_despite_its_question_mark() {
+        let info = line_info("speed of light = #?");
+        assert_eq!(info[0].kind, BlockKind::Code);
+        assert_eq!(info[0].query, Some(17));
+    }
+
+    #[test]
+    fn comments_are_found_on_calculations_only() {
+        let source = ["    I = 3/2 # nuclear spin", "# A heading", "Prose with # in it."]
+            .join("\n");
+        let info = line_info(&source);
+        assert_eq!(info[0].comment, Some(12));
+        assert_eq!(info[1].kind, BlockKind::Heading);
+        assert_eq!(info[1].comment, None);
+        assert_eq!(info[2].kind, BlockKind::Prose);
+        assert_eq!(info[2].comment, None);
     }
 
     #[test]

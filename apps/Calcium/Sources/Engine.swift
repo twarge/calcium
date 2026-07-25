@@ -12,6 +12,15 @@ enum LineKind: String, Decodable {
     case heading, code, prose
 }
 
+/// How one source line reads, as the engine sees it.
+struct LineInfo: Decodable {
+    let kind: LineKind
+    /// UTF-16 offset of a trailing `#` comment within the line.
+    let comment: Int?
+    /// UTF-16 offset of a `#?` autocomplete request.
+    let query: Int?
+}
+
 /// The Rust engine, behind a Swift-shaped door.
 ///
 /// The whole interface is `String -> String`, so there is no shared state to
@@ -33,12 +42,12 @@ enum Engine {
     /// than it looks — an unindented `T = 125 degC` is a calculation, while an
     /// unindented sentence ending in a full stop is not — and a second copy of
     /// it in the editor drifts out of step with the one that matters.
-    static func lineKinds(of source: String) -> [LineKind] {
+    static func lines(of source: String) -> [LineInfo] {
         guard let json = call(calcium_line_kinds, source),
               let data = json.data(using: .utf8),
-              let kinds = try? JSONDecoder().decode([LineKind].self, from: data)
+              let lines = try? JSONDecoder().decode([LineInfo].self, from: data)
         else { return [] }
-        return kinds
+        return lines
     }
 
     /// The document with answers written in after each `=>`. This is what goes

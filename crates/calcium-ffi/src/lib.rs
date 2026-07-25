@@ -98,9 +98,12 @@ pub unsafe extern "C" fn calcium_strip_answers(source: *const c_char) -> *mut c_
     guarded(move || doc::strip_answers(source))
 }
 
-/// How each line reads, as JSON: `["heading","code","prose", ...]`, one entry
-/// per source line. An editor needs this to colour prose differently without
-/// re-deriving a rule the engine already has.
+/// How each line reads, as JSON:
+/// `[{"kind":"code","comment":12}, {"kind":"prose"}, ...]`, one entry per
+/// source line, `comment` being the UTF-16 offset of a trailing `#`.
+///
+/// An editor needs this to colour prose and comments without re-deriving rules
+/// the engine already has — and they have exceptions, so a private copy drifts.
 ///
 /// # Safety
 /// As [`calcium_evaluate`].
@@ -111,15 +114,25 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
     };
     guarded(move || {
         let mut json = String::from("[");
-        for (i, kind) in doc::line_kinds(source).iter().enumerate() {
+        for (i, line) in doc::line_info(source).iter().enumerate() {
             if i > 0 {
                 json.push(',');
             }
-            json.push_str(match kind {
+            json.push_str("{\"kind\":");
+            json.push_str(match line.kind {
                 doc::BlockKind::Heading => "\"heading\"",
                 doc::BlockKind::Code => "\"code\"",
                 doc::BlockKind::Prose => "\"prose\"",
             });
+            if let Some(comment) = line.comment {
+                json.push_str(",\"comment\":");
+                json.push_str(&comment.to_string());
+            }
+            if let Some(query) = line.query {
+                json.push_str(",\"query\":");
+                json.push_str(&query.to_string());
+            }
+            json.push('}');
         }
         json.push(']');
         json
@@ -217,8 +230,13 @@ mod tests {
 
     #[test]
     fn reports_line_kinds() {
-        let json = through(calcium_line_kinds, "# Head\nT = 125 degC\nA sentence.");
-        assert_eq!(json, "[\"heading\",\"code\",\"prose\"]");
+        let json = through(calcium_line_kinds, "# Head\nT = 125 degC # note\nA sentence.");
+        assert_eq!(
+            json,
+            "[{\"kind\":\"heading\"},\
+              {\"kind\":\"code\",\"comment\":13},\
+              {\"kind\":\"prose\"}]"
+        );
     }
 
     #[test]

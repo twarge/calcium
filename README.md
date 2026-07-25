@@ -229,8 +229,13 @@ between the two kinds with a `#!constants` / `#!units` marker, because a
 constant must fold into arithmetic wherever it appears while a unit must stay
 symbolic until an `in` conversion asks otherwise.
 
-**Not implemented.** `plot(...)` passes through untouched for a UI layer to pick
-up, and `#?` (AI autocomplete) parses but does not resolve.
+**Not implemented.** `plot(...)` passes through untouched for a UI layer to
+pick up.
+
+**`#?` resolves on-device.** Write `mass of earth = #?` and, where Apple
+Intelligence is available, the reply replaces the `#?` — through the ordinary
+editing path, so it is the author's text and undo takes it back out. A line is
+asked once; undoing the reply does not re-ask.
 
 Headings are presentational only — they do not scope names. There is one
 namespace, and a redefinition wins from that point down. That matches Calca,

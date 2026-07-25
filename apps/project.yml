@@ -37,7 +37,9 @@ targets:
         LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../target/release"
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
         HEADER_SEARCH_PATHS: "$(SRCROOT)/../crates/calcium-ffi/include"
-        OTHER_LDFLAGS: "-lcalcium_ffi"
+        # FoundationModels is weak-linked: the deployment target predates it, and
+        # `#?` resolution is availability-gated at runtime.
+        OTHER_LDFLAGS: "-lcalcium_ffi -weak_framework FoundationModels"
     info:
       path: Calcium/Info.plist
       properties:

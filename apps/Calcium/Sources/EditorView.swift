@@ -98,6 +98,8 @@ struct EditorView: NSViewRepresentable {
         /// this editor writes to that binding on every keystroke. The two
         /// interleave and Cmd-Z ends up doing nothing at all.
         private let undoManager = UndoManager()
+        /// Resolves `#?` requests against the on-device model.
+        private let autocomplete = Autocomplete()
 
         init(_ parent: EditorView) {
             self.parent = parent
@@ -187,7 +189,13 @@ struct EditorView: NSViewRepresentable {
             // handed over as-is; no need to strip the previous answers first.
             let answers = Engine.evaluate(textView.string)
             splice(answers, into: textView)
-            highlight(textView, kinds: Engine.lineKinds(of: textView.string))
+            let lines = Engine.lines(of: textView.string)
+            highlight(textView, lines: lines)
+            // The delegate always runs on the main thread; say so to the
+            // compiler, which cannot see it.
+            MainActor.assumeIsolated {
+                autocomplete.resolveFirstQuery(in: textView, lines: lines)
+            }
             parent.text = textView.string
         }
 
@@ -329,7 +337,7 @@ struct EditorView: NSViewRepresentable {
 
         /// Applies attributes only — never characters — so undo and the typing
         /// position are untouched.
-        private func highlight(_ textView: NSTextView, kinds: [LineKind]) {
+        private func highlight(_ textView: NSTextView, lines: [LineInfo]) {
             guard let storage = textView.textStorage else { return }
             let whole = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
@@ -341,7 +349,8 @@ struct EditorView: NSViewRepresentable {
             text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
                 _, lineRange, _, _ in
                 defer { index += 1 }
-                switch kinds.indices.contains(index) ? kinds[index] : .code {
+                let line = lines.indices.contains(index) ? lines[index] : nil
+                switch line?.kind ?? .code {
                 case .heading:
                     storage.addAttribute(.font, value: Typography.heading, range: lineRange)
                 case .prose:
@@ -350,6 +359,17 @@ struct EditorView: NSViewRepresentable {
                         .foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
                 case .code:
                     break
+                }
+                // A trailing `#` comment, from wherever the engine says it
+                // starts — a `#` inside a string or a `#?` query is not one.
+                if let offset = line?.comment {
+                    let start = lineRange.location + offset
+                    let length = NSMaxRange(lineRange) - start
+                    if length > 0, NSMaxRange(lineRange) <= storage.length {
+                        storage.addAttribute(
+                            .foregroundColor, value: Palette.comment,
+                            range: NSRange(location: start, length: length))
+                    }
                 }
             }
 
@@ -391,6 +411,18 @@ struct EditorView: NSViewRepresentable {
             }
             return ranges
         }
+    }
+}
+
+enum Palette {
+    /// A slate grey-blue: clearly an aside, without the flatness of plain grey,
+    /// and distinct from the grey the answers use. Resolved per appearance so
+    /// it holds its weight in both themes.
+    static let comment = NSColor(name: "comment") { appearance in
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return dark
+            ? NSColor(srgbRed: 0.46, green: 0.55, blue: 0.66, alpha: 1)
+            : NSColor(srgbRed: 0.38, green: 0.47, blue: 0.58, alpha: 1)
     }
 }
 

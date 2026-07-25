@@ -123,11 +123,37 @@ pub fn lex(src: &str) -> Vec<Token> {
     Lexer::new(src).run()
 }
 
+/// Where the first `#?` autocomplete request sits, as a UTF-16 offset, or
+/// `None` if the line has none.
+pub fn query_start(src: &str) -> Option<usize> {
+    lex(src)
+        .iter()
+        .find(|t| t.tok == Tok::HashQuestion)
+        .map(|t| src[..t.start].encode_utf16().count())
+}
+
+/// Where a trailing `#` comment begins, as a UTF-16 offset into the line, or
+/// `None` if there is not one.
+///
+/// Answered by running the lexer, not by scanning for a `#`: the rule has
+/// exceptions — `#?` is an autocomplete request, and a `#` inside a string is
+/// just a character — and an editor colouring comments needs the same answer
+/// the engine acts on.
+pub fn comment_start(src: &str) -> Option<usize> {
+    // UTF-16, because that is what a text view counts in.
+    Lexer::new(src)
+        .run_inner()
+        .1
+        .map(|byte| src[..byte].encode_utf16().count())
+}
+
 struct Lexer<'a> {
     src: &'a str,
     chars: Vec<(usize, char)>,
     pos: usize,
     out: Vec<Token>,
+    /// Byte offset of the `#` that ended scanning, if one did.
+    comment: Option<usize>,
 }
 
 impl<'a> Lexer<'a> {
@@ -137,6 +163,7 @@ impl<'a> Lexer<'a> {
             chars: src.char_indices().collect(),
             pos: 0,
             out: Vec::new(),
+            comment: None,
         }
     }
 
@@ -163,7 +190,11 @@ impl<'a> Lexer<'a> {
         c
     }
 
-    fn run(mut self) -> Vec<Token> {
+    fn run(self) -> Vec<Token> {
+        self.run_inner().0
+    }
+
+    fn run_inner(mut self) -> (Vec<Token>, Option<usize>) {
         let mut space_before = false;
         loop {
             // Skip whitespace, remembering that we saw some.
@@ -182,6 +213,7 @@ impl<'a> Lexer<'a> {
                     space_before = false;
                     continue;
                 }
+                self.comment = Some(start);
                 break; // comment runs to end of line
             }
 
@@ -205,7 +237,7 @@ impl<'a> Lexer<'a> {
             end,
             space_before,
         });
-        self.out
+        (self.out, self.comment)
     }
 
     fn push(&mut self, tok: Tok, start: usize, space_before: bool) {
@@ -600,6 +632,19 @@ mod tests {
         assert_eq!(toks("3 ≠ 3"), toks("3 != 3"));
         assert_eq!(toks("¬true"), toks("!true"));
         assert_eq!(toks("2 ** 3"), toks("2 ^ 3"));
+    }
+
+    #[test]
+    fn finds_where_a_comment_starts() {
+        assert_eq!(comment_start("I = 3/2 # nuclear spin"), Some(8));
+        assert_eq!(comment_start("I = 3/2"), None);
+        // `#?` is an autocomplete request, not a comment.
+        assert_eq!(comment_start("mass = #?"), None);
+        // A `#` inside a string is just a character.
+        assert_eq!(comment_start("label = \"a # b\""), None);
+        assert_eq!(comment_start("label = \"a # b\" # real"), Some(16));
+        // Counted in UTF-16, which is what a text view uses.
+        assert_eq!(comment_start("γ = 1 # note"), Some(6));
     }
 
     #[test]
