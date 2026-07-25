@@ -418,15 +418,17 @@ Gauss = gauss
 
 ## Physical constants
 #
-# Written out in words, which is what multi-word names are for: `h` is already
-# the henry, `e` is Euler's number, and `k` and `R` are far too useful as
-# variables to spend on Boltzmann and the gas constant. CODATA 2018; the
-# SI-defining ones are exact.
+# Mostly written out in words, which is what multi-word names are for: `e` is
+# Euler's number and `k` and `R` are far too useful as variables to spend on
+# Boltzmann and the gas constant. `h` is the exception — in physics it is
+# Planck's constant and very little else, and the henry has the capital `H`.
+# CODATA 2018; the SI-defining ones are exact.
 
 #!constants
 
 speed of light = 299792458 m/s
 planck constant = 6.62607015e-34 J*s
+h = planck constant
 reduced planck constant = planck constant/(2*pi)
 hbar = reduced planck constant
 boltzmann constant = 1.380649e-23 J/K

@@ -146,9 +146,9 @@ You can invent units by defining them.
 Ask for a variable that has no value and Calcium looks back through the
 document for something that determines it.
 
-    perimeter = 2 * (w + h)
+    perimeter = 2 * (width + height)
 
-    w => -h + 0.5 perimeter
+    width => -height + 0.5 perimeter
 
 That works on equations too, not just definitions.
 

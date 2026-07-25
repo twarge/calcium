@@ -192,9 +192,12 @@ bitwise or. `|foo|^2 + |bar|^2` needs the parser to know which position it is in
 misbehave, because solving `v = i*r` for `r` gives `v/i`, which reduces under
 `i^2 = -1`. Any other name for current works.
 
-**Single-letter unit collisions.** `[A, B, C]` picks up ampere, byte and
-coulomb. Two distinct unit symbols also do not compare unequal, so `if x == B`
-stays symbolic. Both are fixable; neither is fixed.
+**Single-letter names are mostly spoken for.** `[A, B, C]` picks up ampere,
+byte and coulomb, and `h` is Planck's constant. A document's own definition
+always wins — `h = 3` shadows the prelude — but a name left *undefined* silently
+becomes the unit or constant rather than staying a free symbol, which is how a
+stray `K` or a `6.6261e-34` turns up in an answer. Two distinct unit symbols
+also do not compare unequal, so `if x == B` stays symbolic.
 
 **A name cannot contain the word `in`,** which is reserved for conversions —
 `items in cart` parses as a conversion of `items`.
@@ -217,10 +220,11 @@ applied programmatically in both symbol and spelled-out form, so defining `T`
 gives `nT`, `mT`, `kT` and `nanotesla` for free — and `parsec` gives you
 `attoparsec`.
 
-Physical constants live there too, spelled out in words rather than symbols:
-`h` is the henry, `e` is Euler's number, and `k` and `R` are far too useful as
-variables to spend on Boltzmann and the gas constant. So it is
-`boltzmann constant`, `speed of light`, `bohr magneton`. The prelude switches
+Physical constants live there too, mostly spelled out in words rather than
+symbols: `e` is Euler's number, and `k` and `R` are far too useful as variables
+to spend on Boltzmann and the gas constant. So it is `boltzmann constant`,
+`speed of light`, `bohr magneton`. `h` is the exception — in physics it is
+Planck's constant and very little else, and the henry keeps the capital `H`. The prelude switches
 between the two kinds with a `#!constants` / `#!units` marker, because a
 constant must fold into arithmetic wherever it appears while a unit must stay
 symbolic until an `in` conversion asks otherwise.

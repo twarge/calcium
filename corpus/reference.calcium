@@ -307,6 +307,14 @@ Spelled out in words, so they collide with nothing. `h` is the henry, `e` is
 Euler's number, and `k` is too useful as a variable to spend on Boltzmann.
 
     speed of light in m/s          => 299,792,458 m/s
+    h in J*s                       => 6.6261e-34 J*s
+    hbar in J*s                    => 1.0546e-34 J*s
+
+`h` is Planck's constant; the henry keeps the capital `H`, and `h` as a prefix
+is untouched.
+
+    1 H in V*s/A                   => 1 V*s/A
+    2 hPa in Pa                    => 200 Pa
     1 amu in kg                    => 1.6605e-27 kg
     1 barn in m^2                  => 1e-28 m^2
     boltzmann constant * 300 K in J => 4.1419e-21 J
