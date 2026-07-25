@@ -86,7 +86,43 @@ struct EditorViewIOS: UIViewRepresentable {
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !isSplicing else { return }
+            applyTypingAttributes(textView)
             persistViewStateSoon(for: textView)
+        }
+
+        /// Line classification from the most recent highlight.
+        private var lastLines: [LineInfo] = []
+
+        /// The next character takes the face of the line the caret is on,
+        /// rather than arriving monospace and being corrected a beat later.
+        private func applyTypingAttributes(_ textView: UITextView) {
+            let caret = textView.selectedRange.location
+            let text = textView.text as NSString
+            guard caret <= text.length else { return }
+            var lineStart = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: nil,
+                for: NSRange(location: caret, length: 0))
+            let index = text.substring(to: lineStart).components(separatedBy: "\n").count - 1
+            let kind = lastLines.indices.contains(index) ? lastLines[index].kind : .code
+            switch kind {
+            case .heading:
+                let level = lastLines.indices.contains(index)
+                    ? (lastLines[index].level ?? 1) : 1
+                textView.typingAttributes = [
+                    .font: TypographyIOS.heading(level: level),
+                    .foregroundColor: UIColor.label,
+                ]
+            case .prose:
+                textView.typingAttributes = [
+                    .font: TypographyIOS.prose, .foregroundColor: UIColor.secondaryLabel,
+                ]
+            case .code:
+                textView.typingAttributes = [
+                    .font: TypographyIOS.body, .foregroundColor: UIColor.label,
+                    .ligature: TypographyIOS.ligatures ? 1 : 0,
+                ]
+            }
         }
 
         // MARK: Editing
@@ -94,6 +130,8 @@ struct EditorViewIOS: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             guard !isSplicing else { return }
             parent.text = textView.text
+            // Restyle now; only evaluation waits for the pause.
+            highlight(textView, lines: Engine.lines(of: textView.text))
             scheduled?.cancel()
             let item = DispatchWorkItem { [weak self, weak textView] in
                 guard let self, let textView else { return }
@@ -214,6 +252,7 @@ struct EditorViewIOS: UIViewRepresentable {
         // MARK: Highlighting
 
         private func highlight(_ textView: UITextView, lines: [LineInfo]) {
+            lastLines = lines
             let storage = textView.textStorage
             let whole = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
@@ -233,10 +272,14 @@ struct EditorViewIOS: UIViewRepresentable {
                 switch line?.kind ?? .code {
                 case .heading:
                     storage.addAttribute(
-                        .font, value: TypographyIOS.heading, range: lineRange)
+                        .font, value: TypographyIOS.heading(level: line?.level ?? 1),
+                        range: lineRange)
                 case .prose:
-                    storage.addAttribute(
-                        .foregroundColor, value: UIColor.secondaryLabel, range: lineRange)
+                    storage.addAttributes(
+                        [
+                            .font: TypographyIOS.prose,
+                            .foregroundColor: UIColor.secondaryLabel,
+                        ], range: lineRange)
                 case .code:
                     break
                 }
@@ -269,6 +312,7 @@ struct EditorViewIOS: UIViewRepresentable {
                     range: region.range)
             }
             storage.endEditing()
+            applyTypingAttributes(textView)
         }
 
         // MARK: Line geometry
@@ -306,13 +350,31 @@ enum TypographyIOS {
     static var ligatures: Bool {
         UserDefaults.standard.object(forKey: "ligatures") as? Bool ?? true
     }
+    static var proseUsesSystemFont: Bool {
+        UserDefaults.standard.object(forKey: "proseSystemFont") as? Bool ?? true
+    }
     static var body: UIFont {
         UIFont(name: "FiraCode-Regular", size: baseSize)
             ?? .monospacedSystemFont(ofSize: baseSize, weight: .regular)
     }
-    static var heading: UIFont {
-        UIFont(name: "FiraCode-Bold", size: baseSize)
-            ?? .monospacedSystemFont(ofSize: baseSize, weight: .bold)
+    static func headingMultiplier(_ level: Int) -> CGFloat {
+        switch level {
+        case ...1: 1.6
+        case 2: 1.35
+        case 3: 1.15
+        default: 1.0
+        }
+    }
+    static func heading(level: Int) -> UIFont {
+        let size = baseSize * headingMultiplier(level)
+        if proseUsesSystemFont {
+            return .systemFont(ofSize: size, weight: .bold)
+        }
+        return UIFont(name: "FiraCode-Bold", size: size)
+            ?? .monospacedSystemFont(ofSize: size, weight: .bold)
+    }
+    static var prose: UIFont {
+        proseUsesSystemFont ? .systemFont(ofSize: baseSize) : body
     }
 }
 

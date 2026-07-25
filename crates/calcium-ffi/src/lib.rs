@@ -124,6 +124,10 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
                 doc::BlockKind::Code => "\"code\"",
                 doc::BlockKind::Prose => "\"prose\"",
             });
+            if let Some(level) = line.heading_level {
+                json.push_str(",\"level\":");
+                json.push_str(&level.to_string());
+            }
             if let Some(comment) = line.comment {
                 json.push_str(",\"comment\":");
                 json.push_str(&comment.to_string());
@@ -259,7 +263,7 @@ mod tests {
         let json = through(calcium_line_kinds, "# Head\nT = 125 degC # note\nA sentence.");
         assert_eq!(
             json,
-            "[{\"kind\":\"heading\"},\
+            "[{\"kind\":\"heading\",\"level\":1},\
               {\"kind\":\"code\",\"comment\":13,\"redefines\":[0,1]},\
               {\"kind\":\"prose\"}]"
         );

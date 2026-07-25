@@ -93,6 +93,9 @@ struct EditorView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         private var parent: EditorView
+        /// Line classification from the most recent highlight, for the typing
+        /// attributes: an arrow key should not cost an engine call.
+        private var lastLines: [LineInfo] = []
         /// Where the answers currently sit, for styling.
         private var answerRegions: [(range: NSRange, isError: Bool)] = []
         /// The answer text last written to each line, so that deleting a `=>`
@@ -151,7 +154,47 @@ struct EditorView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSplicing, let textView = notification.object as? NSTextView else { return }
+            // The next character takes the face of the line the caret is on.
+            applyTypingAttributes(textView)
             persistViewStateSoon(for: textView)
+        }
+
+        /// Styling for the caret's line, applied ahead of the keystroke.
+        ///
+        /// `highlight` styles text that exists; this styles text about to
+        /// exist. Without it the first character typed on a line arrives in
+        /// whatever face the previous edit left behind and is corrected a
+        /// moment later — precisely the flicker being avoided.
+        private func applyTypingAttributes(_ textView: NSTextView) {
+            let caret = textView.selectedRange().location
+            let text = textView.string as NSString
+            guard caret <= text.length else { return }
+            var lineStart = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: nil,
+                for: NSRange(location: caret, length: 0))
+            let index = text.substring(to: lineStart).components(separatedBy: "\n").count - 1
+            let kind = lastLines.indices.contains(index) ? lastLines[index].kind : .code
+            switch kind {
+            case .heading:
+                let level = lastLines.indices.contains(index)
+                    ? (lastLines[index].level ?? 1) : 1
+                textView.typingAttributes = [
+                    .font: Typography.proseHeading(scale, level: level),
+                    .foregroundColor: NSColor.labelColor,
+                ]
+            case .prose:
+                textView.typingAttributes = [
+                    .font: Typography.prose(scale),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            case .code:
+                textView.typingAttributes = [
+                    .font: Typography.body(scale),
+                    .foregroundColor: NSColor.labelColor,
+                    .ligature: Typography.ligatures ? 1 : 0,
+                ]
+            }
         }
 
         // MARK: Zoom
@@ -234,6 +277,11 @@ struct EditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !isSplicing, let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            // Restyle now, not on the debounce: a character typed on a prose
+            // line must be born proportional, not corrected to it a beat
+            // later. Only evaluation waits for the pause.
+            let lines = Engine.lines(of: textView.string)
+            highlight(textView, lines: lines)
             scheduleRefresh(of: textView)
         }
 
@@ -460,6 +508,7 @@ struct EditorView: NSViewRepresentable {
         /// Applies attributes only — never characters — so undo and the typing
         /// position are untouched.
         private func highlight(_ textView: NSTextView, lines: [LineInfo]) {
+            lastLines = lines
             guard let storage = textView.textStorage else { return }
             let whole = NSRange(location: 0, length: storage.length)
             storage.beginEditing()
@@ -480,11 +529,18 @@ struct EditorView: NSViewRepresentable {
                 switch line?.kind ?? .code {
                 case .heading:
                     storage.addAttribute(
-                        .font, value: Typography.heading(self.scale), range: lineRange)
+                        .font,
+                        value: Typography.proseHeading(self.scale, level: line?.level ?? 1),
+                        range: lineRange)
                 case .prose:
-                    // Prose sits back a little so the calculations carry the page.
-                    storage.addAttribute(
-                        .foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
+                    // Prose sits back a little so the calculations carry the
+                    // page — and, by default, in the system's own face, so
+                    // sentences read as sentences and code reads as code.
+                    storage.addAttributes(
+                        [
+                            .font: Typography.prose(self.scale),
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                        ], range: lineRange)
                 case .code:
                     break
                 }
@@ -578,6 +634,38 @@ enum Typography {
     /// Whether Fira Code's ligatures draw, set in Preferences.
     static var ligatures: Bool {
         UserDefaults.standard.object(forKey: "ligatures") as? Bool ?? true
+    }
+
+    /// Whether prose and headings are set in the system's proportional face,
+    /// leaving Fira Code to the calculations. On by default: most of a
+    /// document is sentences, and sentences read better proportional.
+    static var proseUsesSystemFont: Bool {
+        UserDefaults.standard.object(forKey: "proseSystemFont") as? Bool ?? true
+    }
+
+    static func prose(_ scale: CGFloat) -> NSFont {
+        proseUsesSystemFont
+            ? .systemFont(ofSize: baseSize * min(max(scale, 0.5), 4))
+            : body(scale)
+    }
+    /// Headings step down with depth: `#` largest, `##` smaller, and so on,
+    /// levelling out at body size by `####`.
+    static func headingMultiplier(_ level: Int) -> CGFloat {
+        switch level {
+        case ...1: 1.6
+        case 2: 1.35
+        case 3: 1.15
+        default: 1.0
+        }
+    }
+
+    static func proseHeading(_ scale: CGFloat, level: Int) -> NSFont {
+        let size = baseSize * min(max(scale, 0.5), 4) * headingMultiplier(level)
+        if proseUsesSystemFont {
+            return .systemFont(ofSize: size, weight: .bold)
+        }
+        return NSFont(name: "FiraCode-Bold", size: size)
+            ?? .monospacedSystemFont(ofSize: size, weight: .bold)
     }
 
     /// Fira Code, bundled in `Resources/Fonts` and registered by

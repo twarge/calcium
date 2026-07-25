@@ -21,6 +21,8 @@ struct LineInfo: Decodable {
     let query: Int?
     /// UTF-16 offset and length of a name this line redefines.
     let redefines: [Int]?
+    /// Heading depth, for headings: 1 for `#`, 2 for `##`, capped at 6.
+    let level: Int?
 }
 
 /// The Rust engine, behind a Swift-shaped door.

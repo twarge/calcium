@@ -11,6 +11,7 @@ import SwiftUI
 struct PreferencesView: View {
     @AppStorage("baseFontSize") private var fontSize = 13.0
     @AppStorage("ligatures") private var ligatures = true
+    @AppStorage("proseSystemFont") private var proseSystemFont = true
     @AppStorage("hideTitleBar") private var hideTitleBar = true
 
     var body: some View {
@@ -25,6 +26,10 @@ struct PreferencesView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 44, alignment: .trailing)
                 }
+                Toggle("System font for prose", isOn: $proseSystemFont)
+                Text("Sentences and headings in the system face; calculations stay in Fira Code.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 Toggle("Ligatures", isOn: $ligatures)
                 Text(
                     ligatures

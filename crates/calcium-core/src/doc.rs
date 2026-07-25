@@ -394,6 +394,8 @@ pub struct LineInfo {
     /// the prelude already provides, or that the document defined earlier.
     /// The tesla incident is why an editor wants to mark these.
     pub redefines: Option<(usize, usize)>,
+    /// Heading depth, for headings: the number of leading `#`, capped at 6.
+    pub heading_level: Option<u8>,
 }
 
 /// How each source line reads, with its comment, one entry per line.
@@ -417,6 +419,16 @@ pub fn line_info(source: &str) -> Vec<LineInfo> {
                     _ => None,
                 },
                 redefines: None,
+                heading_level: match kind {
+                    BlockKind::Heading => Some(
+                        line.trim_start()
+                            .chars()
+                            .take_while(|c| *c == '#')
+                            .count()
+                            .min(6) as u8,
+                    ),
+                    _ => None,
+                },
             }
         })
         .collect();
