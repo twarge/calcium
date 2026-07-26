@@ -162,6 +162,55 @@ struct EditorViewIOS: UIViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
         }
 
+        /// Return steps over the answer rather than through it, the same
+        /// rule as the Mac editor: after typing `1+1=>` the caret sits
+        /// between the arrow and the answer, and splitting the line there
+        /// would strand the answer on the next line. Unlike AppKit, UIKit
+        /// inserts at the range it announced — moving the selection alone
+        /// changes nothing — so the newline is declined and redone by hand
+        /// from the end of the line.
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText text: String
+        ) -> Bool {
+            guard text == "\n", range.length == 0,
+                  let line = answerLine(at: range.location, in: textView),
+                  range.location >= line.afterArrow,
+                  range.location < line.contentsEnd
+            else { return true }
+            textView.selectedRange = NSRange(location: line.contentsEnd, length: 0)
+            // Through insertText, so the editing pipeline — delegate calls
+            // included — runs as if the key landed there. Re-entry is
+            // finite: the moved caret no longer sits inside an answer.
+            textView.insertText("\n")
+            return false
+        }
+
+        /// The `=>` geometry of the line containing `location`, read from
+        /// the live text; `nil` if the line has no answer text after its
+        /// arrow. A port of the Mac coordinator's.
+        private func answerLine(at location: Int, in textView: UITextView)
+            -> (arrowStart: Int, afterArrow: Int, contentsEnd: Int)?
+        {
+            let text = textView.text as NSString
+            guard location >= 0, location <= text.length else { return nil }
+
+            var lineStart = 0
+            var contentsEnd = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: &contentsEnd,
+                for: NSRange(location: location, length: 0))
+            let body = text.substring(
+                with: NSRange(location: lineStart, length: contentsEnd - lineStart))
+            guard let arrow = body.range(of: "=>") else { return nil }
+
+            let arrowStart = lineStart + body.distance(from: body.startIndex, to: arrow.lowerBound)
+            let afterArrow = lineStart + body.distance(from: body.startIndex, to: arrow.upperBound)
+            guard contentsEnd > afterArrow else { return nil }
+            return (arrowStart, afterArrow, contentsEnd)
+        }
+
         func refresh(_ textView: UITextView) {
             let started = CFAbsoluteTimeGetCurrent()
             let answers = Engine.evaluate(textView.text)
