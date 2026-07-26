@@ -21,14 +21,18 @@ struct CalciumDocument: FileDocument {
     /// The text as edited: `=>` markers with nothing after them.
     var text: String
 
+    // The two calculation extensions only, deliberately not plain text at
+    // large: claiming public.plain-text put every .txt and .md on the
+    // system into the document browser and its recents. A stray text file
+    // can still be renamed to .calcium — the format *is* plain text.
     static var readableContentTypes: [UTType] {
-        [.calciumDocument, .calcaDocument, .plainText]
+        [.calciumDocument, .calcaDocument]
     }
     // Writable as well as readable, so opening one of these and saving writes
     // back in place rather than forcing a conversion. It is the same plain
     // text either way; only the extension differs.
     static var writableContentTypes: [UTType] {
-        [.calciumDocument, .calcaDocument, .plainText]
+        [.calciumDocument, .calcaDocument]
     }
 
     init(text: String = CalciumDocument.starter) {

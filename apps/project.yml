@@ -95,10 +95,6 @@ targets:
             CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             LSItemContentTypes: [io.calca.document]
-          - CFBundleTypeName: Plain Text
-            CFBundleTypeRole: Editor
-            LSHandlerRank: Alternate
-            LSItemContentTypes: [public.plain-text]
         # Imported, not exported: this type is another application's to
         # declare. Repeating it here only lets this one open the files.
         UTImportedTypeDeclarations:

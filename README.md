@@ -72,7 +72,10 @@ A document-based app for macOS and iOS from a single target: `DocumentGroup`
 with an `NSTextView` editor on the Mac and a `UITextView` editor on iOS, both
 speaking the same in-text answer model to the same Rust engine. On the Mac it
 has the find bar, Find menu and replace-all that TextEdit has. It opens
-`.calcium` files and, as an alternate handler, `.calca` and plain text.
+`.calcium` files and, as an alternate handler, `.calca` — and nothing else,
+so the document browser and its recents are not flooded with every text file
+on the system. The format is plain text; renaming a file to `.calcium` is
+all it takes.
 
 Preferences (⌘,) hold the default font size, the ligature toggle, and whether
 the title bar hides. Zoom and cursor position are remembered *per document*, in
