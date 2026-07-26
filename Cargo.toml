@@ -20,7 +20,7 @@ calcium-core = { path = "crates/calcium-core" }
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-license = "MIT"
+license = "Apache-2.0"
 
 # Dependencies compiled optimised even in a debug build. The engine leans on
 # num-bigint and num-rational for every arithmetic step, and unoptimised they

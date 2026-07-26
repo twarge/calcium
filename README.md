@@ -313,11 +313,6 @@ Three reasons, in order of weight:
 
 ## Next steps
 
-- **iOS.** The engine already builds for `aarch64-apple-ios`; the document model
-  is shared and only the editor view is AppKit.
-- **The typing pause.** Answers appear a beat after you stop typing rather than
-  during. That delay is what keeps the splice out of the text view's input
-  handling; narrowing it means making the splice interruptible instead.
 - **Incremental evaluation.** `cargo run --release -p calcium-cli --example bench`
   reports the cost of re-evaluating a document from scratch: ~4 ms for the
   500-line reference. Fine for ordinary documents, but it scales worse than
@@ -330,3 +325,11 @@ Three reasons, in order of weight:
   links the *release* engine even in a Debug build, because unoptimised the
   engine is six times slower and the editor feels it; the Rust is exercised by
   `cargo test` rather than by stepping through it from Xcode.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+The bundled Fira Code fonts are not relicensed: they remain under the
+[SIL Open Font License](apps/Calcium/Resources/Fonts/LICENSE-FiraCode.txt),
+which travels with them.
