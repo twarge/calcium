@@ -398,15 +398,40 @@ struct EditorView: NSViewRepresentable {
 
         func undoManager(for view: NSTextView) -> UndoManager? { undoManager }
 
+        /// What one keystroke may cost before answers stop being computed
+        /// inline: half a 60 Hz frame, leaving the other half for the text
+        /// view's own work.
+        private static let inlineBudget: TimeInterval = 0.008
+        /// What the last refresh actually cost — the estimate that decides
+        /// whether the next keystroke can afford one.
+        private var evalCost: TimeInterval = 0
+
         func textDidChange(_ notification: Notification) {
             guard !isSplicing, let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-            // Restyle now, not on the debounce: a character typed on a prose
-            // line must be born proportional, not corrected to it a beat
-            // later. Only evaluation waits for the pause.
-            let lines = Engine.lines(of: textView.string)
-            highlight(textView, lines: lines)
-            scheduleRefresh(of: textView)
+            scheduled?.cancel()
+            // Answers land on the keystroke itself. Three things rule the
+            // inline pass out, and each falls back to the pause: an
+            // input-method composition (never interrupt marked text), an
+            // undo or redo replay (a splice would shift the ranges the undo
+            // stack recorded), and a document that last measured too slow to
+            // evaluate between keystrokes.
+            let undoBusy = undoManager.isUndoing || undoManager.isRedoing
+            if !undoBusy, !textView.hasMarkedText(), evalCost < Self.inlineBudget {
+                refreshAnswers(in: textView)
+                // `#?` queries still wait for the typing to stop: each reply
+                // costs a language-model request, and the in-flight guard is
+                // keyed by line text, which changes with every keystroke.
+                if lastLines.contains(where: { $0.query != nil }) {
+                    scheduleRefresh(of: textView)
+                }
+            } else {
+                parent.text = textView.string
+                // Restyle even while evaluation waits: a character typed on
+                // a prose line must be born proportional, not corrected to
+                // it a beat later.
+                highlight(textView, lines: Engine.lines(of: textView.string))
+                scheduleRefresh(of: textView)
+            }
         }
 
         /// Return steps over the answer rather than through it.
@@ -427,13 +452,9 @@ struct EditorView: NSViewRepresentable {
             return false // let the text view insert the newline at the new spot
         }
 
-        /// Waits for a pause before writing answers back.
-        ///
-        /// This is the price of keeping answers in the text: rewriting the
-        /// buffer between two keystrokes disturbs the text view's input
-        /// handling and characters go missing. Recomputing on the next runloop
-        /// turn is not enough, because that still lands in the middle of a
-        /// burst of typing. So we wait for the typing to stop.
+        /// Waits for a pause before writing answers back — the fallback for
+        /// the cases `textDidChange` rules out of the inline pass, and the
+        /// path every `#?` query takes.
         private func scheduleRefresh(of textView: NSTextView) {
             scheduled?.cancel()
             let item = DispatchWorkItem { [weak self, weak textView] in
@@ -479,18 +500,28 @@ struct EditorView: NSViewRepresentable {
         // MARK: Recomputing
 
         func refresh(_ textView: NSTextView) {
+            let lines = refreshAnswers(in: textView)
+            // The delegate always runs on the main thread; say so to the
+            // compiler, which cannot see it.
+            MainActor.assumeIsolated {
+                autocomplete.resolveFirstQuery(in: textView, lines: lines)
+            }
+        }
+
+        /// Evaluates, splices and restyles — and measures itself, which is
+        /// what decides whether the next keystroke can do this inline.
+        @discardableResult
+        private func refreshAnswers(in textView: NSTextView) -> [LineInfo] {
+            let started = CFAbsoluteTimeGetCurrent()
             // The engine ignores whatever follows a `=>`, so the buffer can be
             // handed over as-is; no need to strip the previous answers first.
             let answers = Engine.evaluate(textView.string)
             splice(answers, into: textView)
             let lines = Engine.lines(of: textView.string)
             highlight(textView, lines: lines)
-            // The delegate always runs on the main thread; say so to the
-            // compiler, which cannot see it.
-            MainActor.assumeIsolated {
-                autocomplete.resolveFirstQuery(in: textView, lines: lines)
-            }
             parent.text = textView.string
+            evalCost = CFAbsoluteTimeGetCurrent() - started
+            return lines
         }
 
         /// Replaces the text after each `=>` with its freshly computed answer.

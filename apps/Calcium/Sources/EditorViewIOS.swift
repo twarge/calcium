@@ -132,12 +132,27 @@ struct EditorViewIOS: UIViewRepresentable {
 
         // MARK: Editing
 
+        /// Half a 60 Hz frame: what one keystroke may cost before answers
+        /// stop being computed inline. Same rule as the Mac coordinator.
+        private static let inlineBudget: TimeInterval = 0.008
+        /// What the last refresh actually cost.
+        private var evalCost: TimeInterval = 0
+
         func textViewDidChange(_ textView: UITextView) {
             guard !isSplicing else { return }
-            parent.text = textView.text
-            // Restyle now; only evaluation waits for the pause.
-            highlight(textView, lines: Engine.lines(of: textView.text))
             scheduled?.cancel()
+            // Answers land on the keystroke itself, with the same three
+            // fallbacks to the pause as the Mac: marked text, an undo or
+            // redo replay, and a document that last measured too slow.
+            let undo = textView.undoManager
+            let undoBusy = (undo?.isUndoing ?? false) || (undo?.isRedoing ?? false)
+            if !undoBusy, textView.markedTextRange == nil, evalCost < Self.inlineBudget {
+                refresh(textView)
+                return
+            }
+            parent.text = textView.text
+            // Restyle even while evaluation waits.
+            highlight(textView, lines: Engine.lines(of: textView.text))
             let item = DispatchWorkItem { [weak self, weak textView] in
                 guard let self, let textView else { return }
                 guard textView.markedTextRange == nil else { return }
@@ -148,10 +163,12 @@ struct EditorViewIOS: UIViewRepresentable {
         }
 
         func refresh(_ textView: UITextView) {
+            let started = CFAbsoluteTimeGetCurrent()
             let answers = Engine.evaluate(textView.text)
             splice(answers, into: textView)
             highlight(textView, lines: Engine.lines(of: textView.text))
             parent.text = textView.text
+            evalCost = CFAbsoluteTimeGetCurrent() - started
         }
 
         // MARK: Splicing (port of the Mac coordinator)
