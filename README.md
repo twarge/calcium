@@ -87,7 +87,7 @@ those operators already mean. They are contextual alternates in a monospaced
 face, so they take the same width as the characters they replace and the caret
 still lands between them. Add `.ligature: 0` in `highlight` to turn them off.
 
-**Answers live in the text**, written in after each `=>` once typing pauses.
+**Answers live in the text**, written in after each `=>` as you type.
 Type `1+2=>` and the answer appears *after* the caret, which stays where you
 left it — so Return carries on to the next line, and typing carries on where
 you were.
@@ -123,8 +123,11 @@ Things that are easy to get wrong, each fixed because it broke in use:
   rather than by a second heuristic in the editor. The rule is subtler than it
   looks — an unindented `T = 125 degC` is a calculation, an unindented sentence
   ending in a full stop is not — and a private copy of it drifts.
-- **Recomputation waits for a pause in typing.** Rewriting the buffer between
-  two keystrokes disturbs the text view's input handling and characters vanish.
+- **Recomputation is inline, with a measured escape hatch.** Answers are
+  evaluated and spliced on the keystroke itself; the refresh times itself, and
+  a document that measures over half a frame falls back to waiting for a pause
+  in typing — as do input-method composition and undo, which a splice would
+  disturb.
 - **Every automatic substitution is off**, including the system's
   double-space-inserts-a-period, which has no per-view property and needs an
   app-domain default. In a prose editor a smart quote is a nicety; here it turns
