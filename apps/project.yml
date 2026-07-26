@@ -71,6 +71,11 @@ targets:
           - Fonts/FiraCode-Bold.ttf
         UILaunchScreen: {}
         UISupportsDocumentBrowser: true
+        # Multiple windows on iPad: one document per scene, side by side or
+        # stacked, plus the system's own affordances (drag a document out of
+        # the browser, the app switcher's +) and the app's ⌘N.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
         # Every orientation, both devices: a text editor has no reason to
         # fight rotation, and iPad multitasking requires the full set anyway.
         UISupportedInterfaceOrientations:

@@ -3,6 +3,9 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 #endif
+#if os(iOS)
+import UIKit
+#endif
 
 
 #if os(macOS)
@@ -124,6 +127,20 @@ struct CalciumApp: App {
             #if os(macOS)
             CommandGroup(after: .pasteboard) {
                 FindCommands()
+            }
+            #endif
+            #if os(iOS)
+            // On the Mac, ⌘N already means "new document window" and the
+            // system provides it. On iPad it is unclaimed, and a fresh scene
+            // is the nearest equivalent: it opens on the document browser,
+            // ready to create or open. Requires the multiple-scenes opt-in
+            // in the Info.plist to do anything.
+            CommandGroup(after: .newItem) {
+                Button("New Window") {
+                    UIApplication.shared.activateSceneSession(
+                        for: UISceneSessionActivationRequest())
+                }
+                .keyboardShortcut("n", modifiers: .command)
             }
             #endif
             CommandGroup(replacing: .help) {
