@@ -201,14 +201,22 @@ struct EditorViewIOS: UIViewRepresentable {
             var selection = textView.selectedRange
             if !edits.isEmpty {
                 isSplicing = true
-                textView.undoManager?.disableUndoRegistration()
+                let undo = textView.undoManager
+                undo?.disableUndoRegistration()
                 storage.beginEditing()
                 for edit in edits.sorted(by: { $0.range.location > $1.range.location }) {
                     storage.replaceCharacters(in: edit.range, with: edit.replacement)
                     selection = adjust(selection, for: edit)
                 }
                 storage.endEditing()
-                textView.undoManager?.enableUndoRegistration()
+                // UIKit owns this undo manager, and editing the storage
+                // behind the view's back can make it reset itself —
+                // removeAllActions re-enables registration as a side effect —
+                // after which an unconditional enableUndoRegistration throws.
+                // Re-enable only if our disable is still in force.
+                if let undo, !undo.isUndoRegistrationEnabled {
+                    undo.enableUndoRegistration()
+                }
                 isSplicing = false
             }
 
