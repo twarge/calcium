@@ -1,0 +1,17 @@
+# The Linux app. A standalone workspace, deliberately: building it needs
+# GTK 4 development files, and the main workspace's tests must not.
+[workspace]
+
+[package]
+name = "calcium-gtk"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+calcium-core = { path = "../../crates/calcium-core" }
+gtk4 = { version = "0.9", features = ["v4_10"] }
+regex = "1"
+
+[profile.release]
+opt-level = 2
