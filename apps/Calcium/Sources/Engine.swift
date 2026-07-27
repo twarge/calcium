@@ -25,11 +25,57 @@ struct LineInfo: Decodable {
     let level: Int?
 }
 
+/// One coloured span within a source line, in UTF-16 units.
+struct TokenSpan: Decodable {
+    enum Class: String, Decodable {
+        case num, str, op, kw, fn, def, name, dir
+    }
+    let o: Int
+    let l: Int
+    let c: Class
+}
+
+/// One completion candidate: a name in scope, with its current value.
+struct Completion: Decodable, Equatable {
+    let name: String
+    /// Rendered as an answer would be; empty for prelude names.
+    let value: String
+    /// Defined by this document, as opposed to the prelude.
+    let doc: Bool
+}
+
 /// The Rust engine, behind a Swift-shaped door.
 ///
 /// The whole interface is `String -> String`, so there is no shared state to
 /// keep in sync and nothing to tear down. Each call is independent.
 enum Engine {
+
+    /// Lexical token spans, one array per source line; empty for prose.
+    static func tokens(of source: String) -> [[TokenSpan]] {
+        guard let json = call(calcium_tokens, source),
+              let data = json.data(using: .utf8),
+              let spans = try? JSONDecoder().decode([[TokenSpan]].self, from: data)
+        else { return [] }
+        return spans
+    }
+
+    /// Names usable at `line` matching `prefix`: the document's own first,
+    /// with current values, then the prelude's.
+    static func completions(of source: String, line: Int, prefix: String) -> [Completion] {
+        let json: String? = source.withCString { src in
+            prefix.withCString { pre in
+                guard let raw = calcium_completions(src, UInt32(max(0, line)), pre) else {
+                    return nil
+                }
+                defer { calcium_string_free(raw) }
+                return String(cString: raw)
+            }
+        }
+        guard let json, let data = json.data(using: .utf8),
+              let hits = try? JSONDecoder().decode([Completion].self, from: data)
+        else { return [] }
+        return hits
+    }
 
     /// Answers for every `=>` in the document, in source order.
     static func evaluate(_ source: String) -> [Answer] {

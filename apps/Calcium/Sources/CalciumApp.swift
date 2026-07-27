@@ -129,6 +129,25 @@ struct CalciumApp: App {
                 FindCommands()
             }
             #endif
+            // Line commands, delivered by notification to the key window's
+            // editor. Comment toggling only touches indented lines — an
+            // unindented leading `#` would be a heading — and indenting is
+            // meaningful here: it is what makes a line a calculation.
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Toggle Comment") {
+                    NotificationCenter.default.post(name: .calciumToggleComment, object: nil)
+                }
+                .keyboardShortcut("/", modifiers: .command)
+                Button("Indent") {
+                    NotificationCenter.default.post(name: .calciumIndent, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: .command)
+                Button("Outdent") {
+                    NotificationCenter.default.post(name: .calciumOutdent, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: .command)
+            }
             #if os(iOS)
             // On the Mac, ⌘N already means "new document window" and the
             // system provides it. On iPad it is unclaimed, and a fresh scene

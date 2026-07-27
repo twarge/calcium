@@ -26,6 +26,11 @@ struct ContentView: View {
             .toolbar(
                 hideTitleBar && chromeHidden ? .hidden : .visible,
                 for: .windowToolbar)
+            .toolbar {
+                ToolbarItem {
+                    OutlineMenu(text: text)
+                }
+            }
     }
     #else
     var body: some View {
@@ -38,3 +43,50 @@ struct ContentView: View {
     }
     #endif
 }
+
+#if os(macOS)
+/// The document's headings, as a toolbar menu that jumps.
+private struct OutlineMenu: View {
+    let text: String
+
+    private struct Heading: Identifiable {
+        let line: Int
+        let level: Int
+        let title: String
+        var id: Int { line }
+    }
+
+    private var headings: [Heading] {
+        text.components(separatedBy: "\n").enumerated().compactMap { index, line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#"), !trimmed.hasPrefix("#?") else { return nil }
+            let level = trimmed.prefix(while: { $0 == "#" }).count
+            let title = trimmed.drop(while: { $0 == "#" })
+                .trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty else { return nil }
+            return Heading(line: index, level: min(level, 6), title: title)
+        }
+    }
+
+    var body: some View {
+        Menu {
+            if headings.isEmpty {
+                Text("No Headings")
+            } else {
+                ForEach(headings) { heading in
+                    Button(
+                        String(repeating: "    ", count: heading.level - 1) + heading.title
+                    ) {
+                        NotificationCenter.default.post(
+                            name: .calciumJumpToLine, object: nil,
+                            userInfo: ["line": heading.line])
+                    }
+                }
+            }
+        } label: {
+            Label("Outline", systemImage: "list.bullet")
+        }
+        .help("Jump to a heading")
+    }
+}
+#endif

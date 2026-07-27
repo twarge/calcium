@@ -53,8 +53,15 @@ struct EditorView: NSViewRepresentable {
         let pinch = NSMagnificationGestureRecognizer(
             target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
         textView.addGestureRecognizer(pinch)
+        // Option-drag on a number scrubs its value. The delegate admits the
+        // gesture only then, so ordinary drag-selection is untouched.
+        let scrub = NSPanGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.scrubbed(_:)))
+        scrub.delegate = context.coordinator
+        textView.addGestureRecognizer(scrub)
         context.coordinator.installZoomShortcuts(for: textView)
         context.coordinator.followPreferences(of: textView)
+        context.coordinator.installCommands(for: textView)
 
         // Not synchronously: publishing answers is a state change and this is
         // still SwiftUI's view-building pass. By the time this runs the view
@@ -116,7 +123,7 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
         private var parent: EditorView
         /// Line classification from the most recent highlight, for the typing
         /// attributes: an arrow key should not cost an engine call.
@@ -277,6 +284,9 @@ struct EditorView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSplicing, let textView = notification.object as? NSTextView else { return }
+            // Any caret move closes the completion menu; during typing this
+            // fires before textDidChange, which reopens it at the new word.
+            completionPanel.hide()
             // The next character takes the face of the line the caret is on.
             applyTypingAttributes(textView)
             persistViewStateSoon(for: textView)
@@ -432,24 +442,107 @@ struct EditorView: NSViewRepresentable {
                 highlight(textView, lines: Engine.lines(of: textView.string))
                 scheduleRefresh(of: textView)
             }
+            updateCompletions(in: textView)
         }
 
-        /// Return steps over the answer rather than through it.
-        ///
-        /// After typing `1+2=>` the caret sits between the arrow and the
-        /// answer, which is where the author left it. Splitting the line there
-        /// would strand the answer on the next line, so Return goes to the end
-        /// of the line first — which is what the author meant by it.
+        /// Three interceptions, in order: keys the completion menu claims
+        /// while visible; Return stepping over an answer rather than through
+        /// it (after typing `1+2=>` the caret sits between the arrow and the
+        /// answer, and splitting there would strand the answer on the next
+        /// line); and Return continuing a list marker on prose lines.
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            if completionPanel.isVisible {
+                switch selector {
+                case #selector(NSResponder.moveDown(_:)):
+                    completionPanel.move(1)
+                    return true
+                case #selector(NSResponder.moveUp(_:)):
+                    completionPanel.move(-1)
+                    return true
+                case #selector(NSResponder.insertTab(_:)),
+                     #selector(NSResponder.insertNewline(_:)):
+                    if let pick = completionPanel.current {
+                        accept(pick, in: textView)
+                        return true
+                    }
+                    completionPanel.hide()
+                case #selector(NSResponder.cancelOperation(_:)):
+                    completionPanel.hide()
+                    return true
+                default:
+                    break
+                }
+            }
             guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
             let caret = textView.selectedRange()
-            guard caret.length == 0,
-                  let line = answerLine(at: caret.location, in: textView),
-                  caret.location >= line.afterArrow,
-                  caret.location < line.contentsEnd
-            else { return false }
-            textView.setSelectedRange(NSRange(location: line.contentsEnd, length: 0))
-            return false // let the text view insert the newline at the new spot
+            guard caret.length == 0 else { return false }
+
+            if let line = answerLine(at: caret.location, in: textView),
+               caret.location >= line.afterArrow,
+               caret.location < line.contentsEnd
+            {
+                textView.setSelectedRange(NSRange(location: line.contentsEnd, length: 0))
+                return false // let the text view insert the newline at the new spot
+            }
+
+            switch listContinuation(at: caret.location, in: textView) {
+            case .continue(let marker):
+                textView.insertText("\n" + marker, replacementRange: caret)
+                return true
+            case .terminate(let markerRange):
+                // Return on an empty item ends the list: the marker goes,
+                // the newline does not.
+                textView.insertText("", replacementRange: markerRange)
+                return true
+            case .none:
+                return false
+            }
+        }
+
+        /// What Return should do about a Markdown list on the caret's line.
+        private enum ListAction {
+            case `continue`(String)
+            case terminate(NSRange)
+            case none
+        }
+
+        private static let listContinuationRegex = try! NSRegularExpression(
+            pattern: "^(\\s*)([-*>]|\\d+\\.)( +)")
+
+        private func listContinuation(at caret: Int, in textView: NSTextView) -> ListAction {
+            let text = textView.string as NSString
+            let index = lineNumber(at: caret, in: text)
+            guard lastLines.indices.contains(index), lastLines[index].kind == .prose else {
+                return .none
+            }
+            var lineStart = 0
+            var contentsEnd = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: &contentsEnd,
+                for: NSRange(location: caret, length: 0))
+            let line = text.substring(
+                with: NSRange(location: lineStart, length: contentsEnd - lineStart))
+            let full = NSRange(location: 0, length: (line as NSString).length)
+            guard let match = Self.listContinuationRegex.firstMatch(in: line, range: full),
+                  caret >= lineStart + match.range.length
+            else { return .none }
+            if match.range.length == full.length {
+                return .terminate(NSRange(location: lineStart, length: full.length))
+            }
+            let bullet = (line as NSString).substring(with: match.range(at: 2))
+            let next = Int(bullet.dropLast()).map { "\($0 + 1)." } ?? bullet
+            let indent = (line as NSString).substring(with: match.range(at: 1))
+            let gap = (line as NSString).substring(with: match.range(at: 3))
+            return .continue(indent + next + gap)
+        }
+
+        /// Which line a character offset sits on, counting newlines before it.
+        private func lineNumber(at location: Int, in text: NSString) -> Int {
+            var lineStart = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: nil,
+                for: NSRange(location: min(location, text.length), length: 0))
+            return text.substring(to: lineStart).components(separatedBy: "\n").count - 1
         }
 
         /// Waits for a pause before writing answers back — the fallback for
@@ -495,6 +588,254 @@ struct EditorView: NSViewRepresentable {
             let afterArrow = lineStart + body.distance(from: body.startIndex, to: arrow.upperBound)
             guard contentsEnd > afterArrow else { return nil }
             return (arrowStart, afterArrow, contentsEnd)
+        }
+
+        // MARK: Completions
+
+        /// The floating name menu. Owned per coordinator so two windows
+        /// never fight over one panel.
+        let completionPanel = CompletionPanel()
+
+        /// The identifier being typed at the caret: its range and text, or
+        /// nil when the caret is not at the end of a word.
+        private func wordPrefix(at caret: Int, in text: NSString) -> (NSRange, String)? {
+            guard caret > 0, caret <= text.length else { return nil }
+            let isWord = { (unit: unichar) -> Bool in
+                guard let scalar = Unicode.Scalar(unit) else { return false }
+                let ch = Character(scalar)
+                return ch.isLetter || ch.isNumber || ch == "_"
+            }
+            // Mid-word completion would replace text the author can see to
+            // the right of the caret; only offer at the word's end.
+            if caret < text.length, isWord(text.character(at: caret)) { return nil }
+            var start = caret
+            while start > 0, isWord(text.character(at: start - 1)) {
+                start -= 1
+            }
+            guard start < caret else { return nil }
+            let word = text.substring(with: NSRange(location: start, length: caret - start))
+            guard let first = word.first, first.isLetter || first == "_" else { return nil }
+            return (NSRange(location: start, length: caret - start), word)
+        }
+
+        /// Offers names after two typed characters on a code line, values
+        /// included, anchored under the word being typed.
+        func updateCompletions(in textView: NSTextView) {
+            let caret = textView.selectedRange()
+            let text = textView.string as NSString
+            guard caret.length == 0,
+                  let (range, word) = wordPrefix(at: caret.location, in: text),
+                  word.count >= 2
+            else {
+                completionPanel.hide()
+                return
+            }
+            let line = lineNumber(at: caret.location, in: text)
+            guard lastLines.indices.contains(line), lastLines[line].kind == .code else {
+                completionPanel.hide()
+                return
+            }
+            var hits = Engine.completions(of: textView.string, line: line, prefix: word)
+            hits.removeAll { $0.name == word }
+            guard !hits.isEmpty else {
+                completionPanel.hide()
+                return
+            }
+            let anchor = textView.firstRect(
+                forCharacterRange: NSRange(location: range.location, length: 0),
+                actualRange: nil)
+            completionPanel.onPick = { [weak self, weak textView] pick in
+                guard let self, let textView else { return }
+                self.accept(pick, in: textView)
+            }
+            completionPanel.show(Array(hits.prefix(8)), below: anchor, scale: scale)
+        }
+
+        /// Inserts a picked name over the typed prefix, through the ordinary
+        /// editing path so undo and evaluation both see it.
+        func accept(_ pick: Completion, in textView: NSTextView) {
+            completionPanel.hide()
+            let caret = textView.selectedRange()
+            guard let (range, _) = wordPrefix(at: caret.location, in: textView.string as NSString)
+            else { return }
+            textView.insertText(pick.name, replacementRange: range)
+        }
+
+        // MARK: Line commands
+
+        /// Menu commands arrive by notification — the menu cannot see the
+        /// focused coordinator — and the key window's editor acts.
+        func installCommands(for textView: NSTextView) {
+            let center = NotificationCenter.default
+            let forKeyWindow = { [weak self, weak textView] (act: @escaping (Coordinator, NSTextView) -> Void) in
+                { (_: Notification) in
+                    guard let self, let textView,
+                          textView.window?.isKeyWindow == true else { return }
+                    act(self, textView)
+                }
+            }
+            center.addObserver(
+                forName: .calciumToggleComment, object: nil, queue: .main,
+                using: forKeyWindow { this, view in
+                    this.transformSelectedLines(view) { this.toggledComment($0) }
+                })
+            center.addObserver(
+                forName: .calciumIndent, object: nil, queue: .main,
+                using: forKeyWindow { this, view in
+                    this.transformSelectedLines(view) { $0.isEmpty ? nil : "    " + $0 }
+                })
+            center.addObserver(
+                forName: .calciumOutdent, object: nil, queue: .main,
+                using: forKeyWindow { this, view in
+                    this.transformSelectedLines(view) { line in
+                        if line.hasPrefix("\t") { return String(line.dropFirst()) }
+                        var trimmed = line
+                        var removed = 0
+                        while removed < 4, trimmed.hasPrefix(" ") {
+                            trimmed.removeFirst()
+                            removed += 1
+                        }
+                        return removed > 0 ? trimmed : nil
+                    }
+                })
+            center.addObserver(
+                forName: .calciumJumpToLine, object: nil, queue: .main
+            ) { [weak self, weak textView] note in
+                guard let self, let textView, textView.window?.isKeyWindow == true,
+                      let line = note.userInfo?["line"] as? Int
+                else { return }
+                self.jump(to: line, in: textView)
+            }
+        }
+
+        /// Puts the caret at the start of `line` and centres it.
+        private func jump(to line: Int, in textView: NSTextView) {
+            let text = textView.string as NSString
+            var offset = 0
+            var index = 0
+            text.enumerateSubstrings(
+                in: NSRange(location: 0, length: text.length),
+                options: [.byLines, .substringNotRequired]
+            ) { _, range, _, stop in
+                if index == line {
+                    offset = range.location
+                    stop.pointee = true
+                }
+                index += 1
+            }
+            textView.window?.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: offset, length: 0))
+            textView.centerSelectionInVisibleArea(nil)
+        }
+
+        /// If the line is indented and stays one, comments or uncomments it.
+        /// Unindented lines are left alone: a leading `#` there is a heading.
+        private func toggledComment(_ line: String) -> String? {
+            let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+            guard !indent.isEmpty, indent.count < line.count else { return nil }
+            let rest = String(line.dropFirst(indent.count))
+            if rest.hasPrefix("# ") { return indent + String(rest.dropFirst(2)) }
+            if rest.hasPrefix("#") { return indent + String(rest.dropFirst(1)) }
+            return indent + "# " + rest
+        }
+
+        /// Applies a per-line rewrite to every line the selection touches,
+        /// as one edit through the undo-registering path. `nil` from the
+        /// transform leaves that line untouched.
+        private func transformSelectedLines(
+            _ textView: NSTextView, _ transform: (String) -> String?
+        ) {
+            let text = textView.string as NSString
+            let span = text.lineRange(for: textView.selectedRange())
+            let block = text.substring(with: span)
+            let endsWithNewline = block.hasSuffix("\n")
+            var lines = block.components(separatedBy: "\n")
+            if endsWithNewline { lines.removeLast() }
+            var replacement = lines.map { transform($0) ?? $0 }.joined(separator: "\n")
+            if endsWithNewline { replacement.append("\n") }
+            guard replacement != block,
+                  textView.shouldChangeText(in: span, replacementString: replacement)
+            else { return }
+            textView.textStorage?.replaceCharacters(in: span, with: replacement)
+            textView.didChangeText()
+            let kept = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
+            textView.setSelectedRange(NSRange(location: span.location, length: max(0, kept)))
+        }
+
+        // MARK: Value scrubbing
+
+        /// The number being option-dragged: where it sits now, its value
+        /// when the drag began, its decimal places, and the last step count.
+        private var scrubbing: (range: NSRange, value: Double, decimals: Int, steps: Int)?
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: NSGestureRecognizer) -> Bool {
+            guard let textView = gestureRecognizer.view as? NSTextView,
+                  NSEvent.modifierFlags.contains(.option)
+            else { return false }
+            return numberToken(at: gestureRecognizer.location(in: textView), in: textView) != nil
+        }
+
+        /// Option-drag on a number scrubs it: each few points of travel
+        /// steps the last decimal place, and every step re-evaluates, so
+        /// dependent answers follow the drag live.
+        @objc func scrubbed(_ recognizer: NSPanGestureRecognizer) {
+            guard let textView = recognizer.view as? NSTextView else { return }
+            switch recognizer.state {
+            case .began:
+                guard let hit = numberToken(
+                    at: recognizer.location(in: textView), in: textView)
+                else { return }
+                scrubbing = (hit.range, hit.value, hit.decimals, 0)
+                undoManager.beginUndoGrouping()
+            case .changed:
+                guard var scrub = scrubbing else { return }
+                let steps = Int(recognizer.translation(in: textView).x / 6)
+                guard steps != scrub.steps else { return }
+                let value = scrub.value + Double(steps) * pow(10, -Double(scrub.decimals))
+                let formatted = String(format: "%.\(scrub.decimals)f", value)
+                guard textView.shouldChangeText(
+                    in: scrub.range, replacementString: formatted)
+                else { return }
+                textView.textStorage?.replaceCharacters(in: scrub.range, with: formatted)
+                textView.didChangeText()
+                scrub.range.length = (formatted as NSString).length
+                scrub.steps = steps
+                scrubbing = scrub
+            default:
+                if scrubbing != nil {
+                    undoManager.endUndoGrouping()
+                    scrubbing = nil
+                }
+            }
+        }
+
+        /// The plain decimal number under a point, or nil. Hex, exponents
+        /// and fractions are not scrubbed: their "one step" is not obvious.
+        private func numberToken(at point: NSPoint, in textView: NSTextView)
+            -> (range: NSRange, value: Double, decimals: Int)?
+        {
+            let index = textView.characterIndexForInsertion(at: point)
+            let text = textView.string as NSString
+            guard index >= 0, index < text.length else { return nil }
+            let line = lineNumber(at: index, in: text)
+            var lineStart = 0
+            text.getLineStart(
+                &lineStart, end: nil, contentsEnd: nil,
+                for: NSRange(location: index, length: 0))
+            let local = index - lineStart
+            let tokens = Engine.tokens(of: textView.string)
+            guard tokens.indices.contains(line),
+                  let span = tokens[line].first(where: {
+                      $0.c == .num && local >= $0.o && local <= $0.o + $0.l
+                  })
+            else { return nil }
+            let range = NSRange(location: lineStart + span.o, length: span.l)
+            let raw = text.substring(with: range)
+            guard raw.allSatisfy({ $0.isNumber || $0 == "." }),
+                  let value = Double(raw)
+            else { return nil }
+            let decimals = raw.contains(".") ? raw.split(separator: ".").last!.count : 0
+            return (range, value, decimals)
         }
 
         // MARK: Recomputing
@@ -676,6 +1017,7 @@ struct EditorView: NSViewRepresentable {
                 ], range: whole)
 
             let text = storage.string as NSString
+            let tokenLines = Engine.tokens(of: storage.string)
             var index = 0
             var checkable: [NSRange] = []
             text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
@@ -698,8 +1040,23 @@ struct EditorView: NSViewRepresentable {
                             .font: Typography.prose(self.scale),
                             .foregroundColor: NSColor.secondaryLabelColor,
                         ], range: lineRange)
+                    self.applyInlineMarkdown(storage, in: lineRange)
                     checkable.append(lineRange)
                 case .code:
+                    // Colour by the engine's own tokens: numbers, keywords,
+                    // the defined name — ordinary names stay the text colour.
+                    if let spans = tokenLines.indices.contains(index)
+                        ? tokenLines[index] : nil
+                    {
+                        for span in spans {
+                            let range = NSRange(
+                                location: lineRange.location + span.o, length: span.l)
+                            guard NSMaxRange(range) <= NSMaxRange(lineRange),
+                                  let color = Palette.token(span.c)
+                            else { continue }
+                            storage.addAttribute(.foregroundColor, value: color, range: range)
+                        }
+                    }
                     // A code line's comment tail is prose too, as far as the
                     // spelling checker is concerned.
                     if let offset = line?.comment {
@@ -754,6 +1111,99 @@ struct EditorView: NSViewRepresentable {
             checkableTextLength = storage.length
         }
 
+        // MARK: Inline Markdown
+
+        /// `**bold**`, `_italic_`, `` `code` ``, `[text](url)`, and list
+        /// markers, styled in place on prose lines. The marks stay visible —
+        /// hiding syntax would fight the caret model — they just step back.
+        private static let codeSpanRegex = try! NSRegularExpression(pattern: "`[^`\n]+`")
+        private static let boldRegex = try! NSRegularExpression(pattern: "\\*\\*[^*\n]+\\*\\*")
+        private static let italicRegex = try! NSRegularExpression(
+            pattern: "(?<=^|[\\s(])_[^_\n]+_(?=$|[\\s).,;:!?])")
+        private static let linkRegex = try! NSRegularExpression(
+            pattern: "\\[([^\\]\n]+)\\]\\(([^)\\s]+)\\)")
+        private static let listMarkerRegex = try! NSRegularExpression(
+            pattern: "^\\s*(?:[-*>]|\\d+\\.)\\s")
+
+        private func applyInlineMarkdown(_ storage: NSTextStorage, in lineRange: NSRange) {
+            let text = storage.string as NSString
+            let line = text.substring(with: lineRange)
+            let full = NSRange(location: 0, length: (line as NSString).length)
+            let dim = NSColor.tertiaryLabelColor
+
+            if let marker = Self.listMarkerRegex.firstMatch(in: line, range: full) {
+                storage.addAttribute(
+                    .foregroundColor, value: dim,
+                    range: NSRange(
+                        location: lineRange.location + marker.range.location,
+                        length: marker.range.length))
+            }
+
+            // Code spans claim their territory first; emphasis does not
+            // reach inside them.
+            var codeSpans: [NSRange] = []
+            for match in Self.codeSpanRegex.matches(in: line, range: full) {
+                codeSpans.append(match.range)
+                let range = NSRange(
+                    location: lineRange.location + match.range.location,
+                    length: match.range.length)
+                storage.addAttributes(
+                    [.font: Typography.body(scale), .foregroundColor: NSColor.labelColor],
+                    range: range)
+                for tick in [range.location, NSMaxRange(range) - 1] {
+                    storage.addAttribute(
+                        .foregroundColor, value: dim,
+                        range: NSRange(location: tick, length: 1))
+                }
+            }
+            let outsideCode = { (candidate: NSRange) in
+                !codeSpans.contains { NSIntersectionRange($0, candidate).length > 0 }
+            }
+
+            for match in Self.boldRegex.matches(in: line, range: full)
+            where outsideCode(match.range) {
+                let range = NSRange(
+                    location: lineRange.location + match.range.location,
+                    length: match.range.length)
+                storage.addAttribute(.font, value: Typography.proseBold(scale), range: range)
+                for marks in [
+                    NSRange(location: range.location, length: 2),
+                    NSRange(location: NSMaxRange(range) - 2, length: 2),
+                ] {
+                    storage.addAttribute(.foregroundColor, value: dim, range: marks)
+                }
+            }
+
+            for match in Self.italicRegex.matches(in: line, range: full)
+            where outsideCode(match.range) {
+                let range = NSRange(
+                    location: lineRange.location + match.range.location,
+                    length: match.range.length)
+                storage.addAttribute(.font, value: Typography.proseItalic(scale), range: range)
+                for mark in [range.location, NSMaxRange(range) - 1] {
+                    storage.addAttribute(
+                        .foregroundColor, value: dim,
+                        range: NSRange(location: mark, length: 1))
+                }
+            }
+
+            for match in Self.linkRegex.matches(in: line, range: full)
+            where outsideCode(match.range) {
+                let whole = NSRange(
+                    location: lineRange.location + match.range.location,
+                    length: match.range.length)
+                storage.addAttribute(.foregroundColor, value: dim, range: whole)
+                let title = NSRange(
+                    location: lineRange.location + match.range(at: 1).location,
+                    length: match.range(at: 1).length)
+                storage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: title)
+                let target = (line as NSString).substring(with: match.range(at: 2))
+                if let url = URL(string: target), url.scheme != nil {
+                    storage.addAttribute(.link, value: url, range: title)
+                }
+            }
+        }
+
         /// Which line a character offset falls on.
         private func lineIndex(of location: Int, in lines: [NSRange]) -> Int? {
             lines.firstIndex { location >= $0.location && location <= NSMaxRange($0) }
@@ -792,6 +1242,22 @@ enum Palette {
             ? NSColor(srgbRed: 0.46, green: 0.55, blue: 0.66, alpha: 1)
             : NSColor(srgbRed: 0.38, green: 0.47, blue: 0.58, alpha: 1)
     }
+
+    /// Code colours by token class, from the engine's own lexer. `nil` means
+    /// the default text colour — ordinary names stay quiet so the structure
+    /// (numbers, the defined name, keywords) is what carries colour.
+    static func token(_ class: TokenSpan.Class) -> NSColor? {
+        switch `class` {
+        case .num: .systemBlue
+        case .str: .systemBrown
+        case .kw: .systemPurple
+        case .fn: .systemPink
+        case .def: .systemTeal
+        case .dir: .systemPurple
+        case .op: .secondaryLabelColor
+        case .name: nil
+        }
+    }
 }
 
 enum Typography {
@@ -817,6 +1283,14 @@ enum Typography {
         proseUsesSystemFont
             ? .systemFont(ofSize: baseSize * min(max(scale, 0.5), 4))
             : body(scale)
+    }
+    static func proseBold(_ scale: CGFloat) -> NSFont {
+        proseUsesSystemFont
+            ? .boldSystemFont(ofSize: baseSize * min(max(scale, 0.5), 4))
+            : named("FiraCode-Bold", scale, fallback: .bold)
+    }
+    static func proseItalic(_ scale: CGFloat) -> NSFont {
+        NSFontManager.shared.convert(prose(scale), toHaveTrait: .italicFontMask)
     }
     /// Headings step down with depth: `#` largest, `##` smaller, and so on,
     /// levelling out at body size by `####`.

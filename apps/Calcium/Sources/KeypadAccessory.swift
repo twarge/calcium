@@ -19,8 +19,14 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
     ]
 
-    /// Two 42-point rows plus their margins.
-    private static let height: CGFloat = 105
+    /// A suggestion row and two 42-point key rows, plus their margins.
+    private static let height: CGFloat = 145
+
+    /// The completion strip, filled by the coordinator as an identifier is
+    /// typed: names in scope with their current values, QuickType-style.
+    private let suggestionRow = UIStackView()
+    var onPick: ((Completion) -> Void)?
+    private var suggestions: [Completion] = []
 
     init(for textView: UITextView) {
         self.textView = textView
@@ -50,6 +56,12 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
             column.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
         ])
 
+        suggestionRow.axis = .horizontal
+        suggestionRow.spacing = 6
+        suggestionRow.distribution = .fillEqually
+        suggestionRow.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        column.addArrangedSubview(suggestionRow)
+
         for keys in Self.rows {
             let row = UIStackView()
             row.axis = .horizontal
@@ -60,6 +72,48 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
                 row.addArrangedSubview(button(for: key))
             }
             column.addArrangedSubview(row)
+        }
+    }
+
+    /// Replaces the suggestion strip's contents. Empty clears it; the row
+    /// keeps its height either way, so the keyboard never jumps.
+    func showSuggestions(_ items: [Completion]) {
+        guard items != suggestions else { return }
+        suggestions = items
+        for view in suggestionRow.arrangedSubviews {
+            view.removeFromSuperview()
+        }
+        for (index, item) in items.enumerated() {
+            var config = UIButton.Configuration.plain()
+            let title = NSMutableAttributedString(
+                string: item.name,
+                attributes: [
+                    .font: TypographyIOS.body.withSize(15),
+                    .foregroundColor: UIColor.label,
+                ])
+            if !item.value.isEmpty {
+                title.append(
+                    NSAttributedString(
+                        string: "  " + item.value,
+                        attributes: [
+                            .font: TypographyIOS.body.withSize(13),
+                            .foregroundColor: UIColor.secondaryLabel,
+                        ]))
+            }
+            config.attributedTitle = AttributedString(title)
+            config.titleLineBreakMode = .byTruncatingTail
+            config.background.backgroundColor = .systemFill.withAlphaComponent(0.06)
+            config.background.cornerRadius = 6
+            config.contentInsets = NSDirectionalEdgeInsets(
+                top: 2, leading: 6, bottom: 2, trailing: 6)
+            suggestionRow.addArrangedSubview(
+                UIButton(
+                    configuration: config,
+                    primaryAction: UIAction { [weak self] _ in
+                        guard let self, self.suggestions.indices.contains(index) else { return }
+                        UIDevice.current.playInputClick()
+                        self.onPick?(self.suggestions[index])
+                    }))
         }
     }
 
