@@ -19,8 +19,9 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
     ]
 
-    /// A suggestion row and two 42-point key rows, plus their margins.
-    private static let height: CGFloat = 145
+    /// A suggestion row — plus, on iPhone, two 42-point key rows — and
+    /// margins. Stated up front; self-sizing reads as zero at attach time.
+    private let height: CGFloat
 
     /// The completion strip, filled by the coordinator as an identifier is
     /// typed: names in scope with their current values, QuickType-style.
@@ -28,15 +29,19 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
     var onPick: ((Completion) -> Void)?
     private var suggestions: [Completion] = []
 
-    init(for textView: UITextView) {
+    /// `keys: false` builds only the suggestion strip — the iPad form,
+    /// where the software keyboard has its own number row and a hardware
+    /// keyboard would leave the key rows floating as clutter.
+    init(for textView: UITextView, keys: Bool) {
         self.textView = textView
+        self.height = keys ? 145 : 46
         // The height must be stated up front, in the frame and in
         // `intrinsicContentSize` below. Deriving it from the internal
         // constraints alone reads as zero while the input system attaches
         // the view, and the rows end up layered behind the keyboard
         // instead of docked above it.
         super.init(
-            frame: CGRect(origin: .zero, size: CGSize(width: 0, height: Self.height)),
+            frame: CGRect(origin: .zero, size: CGSize(width: 0, height: height)),
             inputViewStyle: .keyboard)
         allowsSelfSizing = true
 
@@ -62,16 +67,18 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
         suggestionRow.heightAnchor.constraint(equalToConstant: 32).isActive = true
         column.addArrangedSubview(suggestionRow)
 
-        for keys in Self.rows {
-            let row = UIStackView()
-            row.axis = .horizontal
-            row.spacing = 6
-            row.distribution = .fillEqually
-            row.heightAnchor.constraint(equalToConstant: 42).isActive = true
-            for key in keys {
-                row.addArrangedSubview(button(for: key))
+        if keys {
+            for titles in Self.rows {
+                let row = UIStackView()
+                row.axis = .horizontal
+                row.spacing = 6
+                row.distribution = .fillEqually
+                row.heightAnchor.constraint(equalToConstant: 42).isActive = true
+                for key in titles {
+                    row.addArrangedSubview(button(for: key))
+                }
+                column.addArrangedSubview(row)
             }
-            column.addArrangedSubview(row)
         }
     }
 
@@ -121,7 +128,7 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: Self.height)
+        CGSize(width: UIView.noIntrinsicMetric, height: height)
     }
 
     /// The system key click, same as the keyboard's own.

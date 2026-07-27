@@ -106,7 +106,14 @@ struct EditorViewIOS: UIViewRepresentable {
         /// begins the input session is real, and a reload seats both.
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard textView.inputAccessoryView == nil else { return }
-            let accessory = KeypadAccessory(for: textView)
+            // The calculator rows are for the iPhone, whose letters
+            // keyboard hides digits behind a mode switch. The iPad
+            // keyboard has its own number row, and with a hardware
+            // keyboard the rows would float as clutter — there, only the
+            // completion strip rides along.
+            let accessory = KeypadAccessory(
+                for: textView,
+                keys: textView.traitCollection.userInterfaceIdiom == .phone)
             accessory.onPick = { [weak self, weak textView] pick in
                 guard let self, let textView else { return }
                 self.accept(pick, in: textView)
