@@ -151,6 +151,17 @@ tesla — carries a dotted orange underline, marked by the engine so the rule
 matches what evaluation actually does. Pinch, or ⌘+/⌘−/⌘0, scales the type.
 The title bar stays hidden until the pointer moves into it.
 
+Code is coloured token by token — numbers, keywords, functions, the defined
+name — through `calcium_tokens`, the engine's own lexer, so the colours can
+never disagree with evaluation. Typing a name offers completions with
+*current values* (`calcium_completions`): a panel under the caret on the Mac,
+a strip atop the iOS keypad. Prose gets inline Markdown — `**bold**`,
+`_italic_`, `` `code` ``, live links — with the marks visible but stepped
+back, and Return continues list markers. ⌘/ toggles comments, ⌘]/⌘[ indent
+and outdent, an Outline menu jumps to headings, and option-dragging a number
+scrubs its value while every dependent answer follows live. Spelling and
+autocorrect, when enabled, check prose and comments and never calculations.
+
 ## The web demo
 
 ```bash

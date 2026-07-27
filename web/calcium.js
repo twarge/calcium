@@ -34,6 +34,7 @@ function call(name, text) {
 
 const evaluate = (text) => JSON.parse(call("calcium_evaluate", text) ?? "[]");
 const lineInfo = (text) => JSON.parse(call("calcium_line_kinds", text) ?? "[]");
+const tokenInfo = (text) => JSON.parse(call("calcium_tokens", text) ?? "[]");
 
 // ---------------------------------------------------------------------------
 // Splicing — the three-case caret adjustment from the apps. JavaScript string
@@ -81,7 +82,7 @@ function splice(text, answers, caret) {
 const escapeHTML = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-function renderBackdrop(text, answers, info) {
+function renderBackdrop(text, answers, info, toks) {
   const answerByLine = new Map(answers.map((a) => [a.line, a]));
   return text
     .split("\n")
@@ -90,8 +91,15 @@ function renderBackdrop(text, answers, info) {
       let cls = meta.kind === "heading" ? "heading" : meta.kind === "prose" ? "prose" : "";
 
       // Split the line into optionally-styled segments, left to right.
+      // Redefinition first, so on an equal start its underline wins the
+      // first-wins rule below; token colours fill in around the other cuts —
+      // the engine stops tokens at the arrow and the comment, so they never
+      // collide with the answer or comment spans.
       const cuts = [];
       if (meta.redefines) cuts.push([meta.redefines[0], meta.redefines[0] + meta.redefines[1], "redef"]);
+      for (const t of toks?.[i] ?? []) {
+        if (t.c !== "name") cuts.push([t.o, t.o + t.l, "tok-" + t.c]);
+      }
       const answer = answerByLine.get(i);
       if (answer) {
         const arrow = line.indexOf("=>");
@@ -134,7 +142,8 @@ let lastAnswers = [];
 /// *values* may be a beat stale here; their positions are recomputed against
 /// the live text.
 function paint() {
-  backdrop.innerHTML = renderBackdrop(editor.value, lastAnswers, lineInfo(editor.value));
+  backdrop.innerHTML = renderBackdrop(
+    editor.value, lastAnswers, lineInfo(editor.value), tokenInfo(editor.value));
   // A trailing newline in a <textarea> renders one line shorter than the same
   // text in a <div>; pad so the columns stay aligned.
   if (editor.value.endsWith("\n")) backdrop.innerHTML += "\n";

@@ -15,6 +15,13 @@
     --comment: #61788f;
     --error: #d0342c;
     --accent: #e58900;
+    /* Token colours, matching the app: numbers blue, keywords purple,
+       functions pink, the defined name teal, strings brown. */
+    --tok-num: #0f6bd8;
+    --tok-str: #8a5a00;
+    --tok-kw: #8a3fc9;
+    --tok-fn: #d63384;
+    --tok-def: #0e8377;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -23,6 +30,11 @@
       --dim: #8e8e93;
       --comment: #758ca3;
       --error: #ff6b5e;
+      --tok-num: #64a8ff;
+      --tok-str: #d9a35c;
+      --tok-kw: #c88ef0;
+      --tok-fn: #ff8ab8;
+      --tok-def: #4fd1c5;
     }
   }
   * { box-sizing: border-box; }
@@ -64,6 +76,13 @@
   .answer  { color: var(--dim); }
   .error   { color: var(--error); }
   .redef   { text-decoration: underline wavy var(--accent) 1px; text-underline-offset: 3px; }
+  .tok-num { color: var(--tok-num); }
+  .tok-str { color: var(--tok-str); }
+  .tok-kw  { color: var(--tok-kw); }
+  .tok-fn  { color: var(--tok-fn); }
+  .tok-def { color: var(--tok-def); }
+  .tok-dir { color: var(--tok-kw); }
+  .tok-op  { color: var(--dim); }
   .loading {
     position: absolute; inset: 0; display: grid; place-items: center;
     color: var(--dim); font: 14px ui-monospace, monospace;
