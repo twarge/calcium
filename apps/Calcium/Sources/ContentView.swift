@@ -29,8 +29,12 @@ struct ContentView: View {
     }
     #else
     var body: some View {
+        // No `.ignoresSafeArea(.keyboard)` here, deliberately: SwiftUI's
+        // keyboard avoidance is what constrains the editor to end above the
+        // keyboard and its keypad rows. A raw UITextView does no keyboard
+        // avoidance of its own, so opting out left the text running on
+        // beneath them.
         EditorViewIOS(text: $text, fileURL: fileURL)
-            .ignoresSafeArea(.keyboard, edges: .bottom)
     }
     #endif
 }
