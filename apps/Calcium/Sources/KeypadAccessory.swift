@@ -19,9 +19,19 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
     ]
 
+    /// Two 42-point rows plus their margins.
+    private static let height: CGFloat = 105
+
     init(for textView: UITextView) {
         self.textView = textView
-        super.init(frame: .zero, inputViewStyle: .keyboard)
+        // The height must be stated up front, in the frame and in
+        // `intrinsicContentSize` below. Deriving it from the internal
+        // constraints alone reads as zero while the input system attaches
+        // the view, and the rows end up layered behind the keyboard
+        // instead of docked above it.
+        super.init(
+            frame: CGRect(origin: .zero, size: CGSize(width: 0, height: Self.height)),
+            inputViewStyle: .keyboard)
         allowsSelfSizing = true
 
         let column = UIStackView()
@@ -29,9 +39,13 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
         column.spacing = 7
         column.translatesAutoresizingMaskIntoConstraints = false
         addSubview(column)
+        // The bottom edge yields rather than break during the transient
+        // zero-height passes the input system runs while attaching.
+        let bottom = column.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+        bottom.priority = UILayoutPriority(999)
         NSLayoutConstraint.activate([
             column.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            column.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            bottom,
             column.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             column.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
         ])
@@ -51,6 +65,10 @@ final class KeypadAccessory: UIInputView, UIInputViewAudioFeedback {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: Self.height)
+    }
 
     /// The system key click, same as the keyboard's own.
     var enableInputClicksWhenVisible: Bool { true }
