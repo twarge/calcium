@@ -38,10 +38,6 @@ struct EditorViewIOS: UIViewRepresentable {
         textView.smartInsertDeleteType = .no
         textView.spellCheckingType = .no
         textView.keyboardType = .asciiCapable
-        // The calculator rows above the keyboard: operators and digits,
-        // inserted through the ordinary editing pipeline so each tap
-        // evaluates like a keystroke.
-        textView.inputAccessoryView = KeypadAccessory(for: textView)
 
         textView.delegate = context.coordinator
         textView.text = text
@@ -97,6 +93,20 @@ struct EditorViewIOS: UIViewRepresentable {
             guard !isSplicing else { return }
             applyTypingAttributes(textView)
             persistViewStateSoon(for: textView)
+        }
+
+        /// The calculator rows above the keyboard: operators and digits,
+        /// inserted through the ordinary editing pipeline so each tap
+        /// evaluates like a keystroke.
+        ///
+        /// Attached on first focus, not at construction. Built while the
+        /// view was still windowless, the input system's first activation
+        /// came up with the accessory but no keyboard; by the time editing
+        /// begins the input session is real, and a reload seats both.
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            guard textView.inputAccessoryView == nil else { return }
+            textView.inputAccessoryView = KeypadAccessory(for: textView)
+            textView.reloadInputViews()
         }
 
         /// Line classification from the most recent highlight.
