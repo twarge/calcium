@@ -38,6 +38,10 @@ struct EditorViewIOS: UIViewRepresentable {
         textView.smartInsertDeleteType = .no
         textView.spellCheckingType = .no
         textView.keyboardType = .asciiCapable
+        // The calculator rows above the keyboard: operators and digits,
+        // inserted through the ordinary editing pipeline so each tap
+        // evaluates like a keystroke.
+        textView.inputAccessoryView = KeypadAccessory(for: textView)
 
         textView.delegate = context.coordinator
         textView.text = text
