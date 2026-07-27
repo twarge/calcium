@@ -146,6 +146,93 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
     })
 }
 
+/// Lexical token spans per line, as JSON with compact keys — this is called
+/// on every keystroke: `[[{"o":4,"l":5,"c":"def"}, ...], [], ...]`, offsets
+/// and lengths in UTF-16, one array per source line, empty for prose.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_tokens(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || {
+        let mut json = String::from("[");
+        for (i, line) in doc::tokens(source).iter().enumerate() {
+            if i > 0 {
+                json.push(',');
+            }
+            json.push('[');
+            for (j, span) in line.iter().enumerate() {
+                if j > 0 {
+                    json.push(',');
+                }
+                json.push_str(&format!(
+                    "{{\"o\":{},\"l\":{},\"c\":\"{}\"}}",
+                    span.offset,
+                    span.length,
+                    match span.class {
+                        doc::TokenClass::Number => "num",
+                        doc::TokenClass::Str => "str",
+                        doc::TokenClass::Operator => "op",
+                        doc::TokenClass::Keyword => "kw",
+                        doc::TokenClass::Function => "fn",
+                        doc::TokenClass::Definition => "def",
+                        doc::TokenClass::Name => "name",
+                        doc::TokenClass::Directive => "dir",
+                    }
+                ));
+            }
+            json.push(']');
+        }
+        json.push(']');
+        json
+    })
+}
+
+/// Completions for the caret: names usable at `line` (0-based) matching
+/// `prefix`, as JSON `[{"name":"speed","value":"30 mph","doc":true}, ...]` —
+/// document definitions first with current values, then prelude names.
+/// Capped at 80 entries; a menu shows fewer.
+///
+/// # Safety
+/// As [`calcium_evaluate`], for both string arguments.
+#[no_mangle]
+pub unsafe extern "C" fn calcium_completions(
+    source: *const c_char,
+    line: u32,
+    prefix: *const c_char,
+) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    let Some(prefix) = borrow(prefix) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || {
+        let mut json = String::from("[");
+        for (i, completion) in doc::completions(source, line as usize, prefix)
+            .iter()
+            .take(80)
+            .enumerate()
+        {
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str("{\"name\":");
+            write_json_string(&mut json, &completion.name);
+            json.push_str(",\"value\":");
+            write_json_string(&mut json, &completion.value);
+            json.push_str(",\"doc\":");
+            json.push_str(if completion.from_document { "true" } else { "false" });
+            json.push('}');
+        }
+        json.push(']');
+        json
+    })
+}
+
 /// Allocates `len` bytes for the caller to write into, used by the wasm
 /// embedding: JavaScript cannot call `malloc`, so the module exports its own
 /// way in. Pair with [`calcium_dealloc`]. The native apps never need this —
@@ -272,5 +359,35 @@ mod tests {
     #[test]
     fn empty_document_is_an_empty_array() {
         assert_eq!(through(calcium_evaluate, ""), "[]");
+    }
+
+    #[test]
+    fn reports_tokens() {
+        let json = through(calcium_tokens, "Prose.\n    x = 2 =>");
+        assert_eq!(
+            json,
+            "[[],\
+              [{\"o\":4,\"l\":1,\"c\":\"def\"},\
+               {\"o\":6,\"l\":1,\"c\":\"op\"},\
+               {\"o\":8,\"l\":1,\"c\":\"num\"},\
+               {\"o\":10,\"l\":2,\"c\":\"op\"}]]"
+        );
+    }
+
+    #[test]
+    fn reports_completions_with_values() {
+        let source = CString::new("    speed = 30 mph\n").unwrap();
+        let prefix = CString::new("sp").unwrap();
+        let json = unsafe {
+            let raw = calcium_completions(source.as_ptr(), 1, prefix.as_ptr());
+            assert!(!raw.is_null());
+            let text = CStr::from_ptr(raw).to_str().unwrap().to_string();
+            calcium_string_free(raw);
+            text
+        };
+        assert!(
+            json.contains("{\"name\":\"speed\",\"value\":\"30 mph\",\"doc\":true}"),
+            "got {json}"
+        );
     }
 }

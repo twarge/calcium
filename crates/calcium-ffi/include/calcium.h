@@ -22,6 +22,14 @@ char *calcium_strip_answers(const char *source);
 /// How each line reads: ["heading","code","prose", ...], one per source line.
 char *calcium_line_kinds(const char *source);
 
+/// Token spans per line, UTF-16 offsets, empty arrays for prose:
+/// [[{"o":4,"l":5,"c":"def"}, ...], [], ...]
+char *calcium_tokens(const char *source);
+
+/// Completions at `line` (0-based) matching `prefix`:
+/// [{"name":"speed","value":"30 mph","doc":true}, ...]
+char *calcium_completions(const char *source, unsigned int line, const char *prefix);
+
 /// Releases a string returned by any of the above. Ignores NULL.
 void calcium_string_free(char *text);
 

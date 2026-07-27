@@ -514,6 +514,195 @@ pub fn strip_answers(source: &str) -> String {
     text
 }
 
+/// One coloured span within a source line, in UTF-16 units — what a text
+/// view counts in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TokenSpan {
+    pub offset: usize,
+    pub length: usize,
+    pub class: TokenClass,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenClass {
+    Number,
+    Str,
+    Operator,
+    Keyword,
+    Function,
+    /// The name being defined on this line, left of its `=`.
+    Definition,
+    Name,
+    Directive,
+}
+
+/// Lexical token spans for every line, one entry per source line; empty for
+/// prose and headings, which are not calculations and take no code colours.
+///
+/// From the same lexer that evaluation uses, so an editor colouring by these
+/// can never disagree with what the engine computes. Spans stop at the `=>`:
+/// what follows is the answer, which the editor styles as an answer.
+pub fn tokens(source: &str) -> Vec<Vec<TokenSpan>> {
+    let kinds = line_kinds(source);
+    source
+        .lines()
+        .enumerate()
+        .map(|(i, line)| match kinds.get(i) {
+            Some(BlockKind::Code) => line_tokens(line),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+fn line_tokens(line: &str) -> Vec<TokenSpan> {
+    use crate::lexer::{lex, Tok};
+    let utf16 = |byte: usize| line[..byte].encode_utf16().count();
+
+    // Where the defined name sits, so its Word tokens — possibly several,
+    // names may contain spaces — read as the definition.
+    let definition: Option<(usize, usize)> = parse_line(line).iter().find_map(|s| match &s.stmt {
+        Stmt::Define { name, .. } | Stmt::SumDefine { name } => {
+            line.find(name.as_str()).map(|at| (at, at + name.len()))
+        }
+        _ => None,
+    });
+
+    let toks = lex(line);
+    let mut spans = Vec::new();
+    let mut iter = toks.iter().peekable();
+    while let Some(token) = iter.next() {
+        let class = match &token.tok {
+            Tok::Eof => break,
+            // Not colours: the query is styled by its own report, and
+            // invalid input is the error's to underline.
+            Tok::HashQuestion | Tok::Invalid(_) => continue,
+            Tok::Num(..) => TokenClass::Number,
+            Tok::Str(_) => TokenClass::Str,
+            Tok::Directive(_) => TokenClass::Directive,
+            Tok::Word(word) => {
+                if definition.is_some_and(|(from, to)| token.start >= from && token.end <= to) {
+                    TokenClass::Definition
+                } else if crate::parser::is_keyword(word) {
+                    TokenClass::Keyword
+                } else if matches!(iter.peek().map(|n| &n.tok), Some(Tok::LParen)) {
+                    TokenClass::Function
+                } else {
+                    TokenClass::Name
+                }
+            }
+            _ => TokenClass::Operator,
+        };
+        spans.push(TokenSpan {
+            offset: utf16(token.start),
+            length: line[token.start..token.end].encode_utf16().count(),
+            class,
+        });
+        // The `=>` is the last thing coloured; the answer follows it.
+        if token.tok == Tok::Arrow {
+            break;
+        }
+    }
+    spans
+}
+
+/// One completion candidate: a name in scope, with its current value if the
+/// document gives it one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Completion {
+    pub name: String,
+    /// The name's value as of `line`, rendered as an answer would be; empty
+    /// for prelude names and names that do not evaluate.
+    pub value: String,
+    pub from_document: bool,
+}
+
+/// Names usable at `line` that match `prefix`: the document's own
+/// definitions first, in definition order with current values, then prelude
+/// names alphabetically.
+///
+/// A name matches if it — or any word of it, names may contain spaces —
+/// starts with the prefix, case-insensitively. An empty prefix matches all.
+///
+/// Values come from one evaluation: the document up to `line` with a probe
+/// `=>` appended per name, so each answer is exactly what the editor would
+/// print for that name at that point.
+pub fn completions(source: &str, line: usize, prefix: &str) -> Vec<Completion> {
+    let upto = source
+        .lines()
+        .take(line)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for block in split_blocks(&upto) {
+        if block.kind != BlockKind::Code {
+            continue;
+        }
+        for statement in parse_line(&joined(&block)) {
+            if let Stmt::Define { name, .. } | Stmt::SumDefine { name } = &statement.stmt {
+                if seen.insert(name.clone()) {
+                    names.push(name.clone());
+                }
+            }
+        }
+    }
+
+    let base = upto.lines().count();
+    let mut probed = upto;
+    for name in &names {
+        probed.push_str("\n    ");
+        probed.push_str(name);
+        probed.push_str(" =>");
+    }
+    let document = evaluate(&probed);
+
+    let mut out: Vec<Completion> = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        if !completion_match(name, prefix) {
+            continue;
+        }
+        let value = document
+            .answers
+            .iter()
+            .find(|a| a.line == base + i && !a.is_error)
+            .map(|a| a.text.clone())
+            .unwrap_or_default();
+        out.push(Completion {
+            name: name.clone(),
+            value,
+            from_document: true,
+        });
+    }
+
+    let env = Env::with_prelude();
+    let mut from_prelude: Vec<&String> = env
+        .prelude_names()
+        .filter(|name| !seen.contains(*name) && completion_match(name, prefix))
+        .collect();
+    from_prelude.sort();
+    out.extend(from_prelude.into_iter().map(|name| Completion {
+        name: name.clone(),
+        value: String::new(),
+        from_document: false,
+    }));
+    out
+}
+
+fn completion_match(name: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return true;
+    }
+    let matches = |word: &str| {
+        word.len() >= prefix.len()
+            && word
+                .chars()
+                .zip(prefix.chars())
+                .all(|(a, b)| a.eq_ignore_ascii_case(&b))
+    };
+    matches(name) || name.split_whitespace().any(matches)
+}
+
 /// Evaluates a definition body eagerly, used by tests and tooling.
 pub fn define_and_eval(env: &mut Env, name: &str, body: Expr) -> Expr {
     env.insert(
@@ -532,6 +721,69 @@ pub fn define_and_eval(env: &mut Env, name: &str, body: Expr) -> Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokens_classify_a_definition_line() {
+        let spans = &tokens("    fuel price = 3.45 $/gallon # per AAA")[0];
+        let classes: Vec<TokenClass> = spans.iter().map(|s| s.class).collect();
+        assert_eq!(
+            classes,
+            vec![
+                TokenClass::Definition, // fuel
+                TokenClass::Definition, // price
+                TokenClass::Operator,   // =
+                TokenClass::Number,     // 3.45
+                TokenClass::Name,       // $
+                TokenClass::Operator,   // /
+                TokenClass::Name,       // gallon
+            ],
+            "got {spans:?}"
+        );
+    }
+
+    #[test]
+    fn tokens_stop_at_the_arrow_and_skip_prose() {
+        let spans = tokens("A sentence.\n    sqrt(9) in cm => 3 cm");
+        assert!(spans[0].is_empty(), "prose takes no code colours");
+        let classes: Vec<TokenClass> = spans[1].iter().map(|s| s.class).collect();
+        assert_eq!(
+            classes,
+            vec![
+                TokenClass::Function, // sqrt
+                TokenClass::Operator, // (
+                TokenClass::Number,   // 9
+                TokenClass::Operator, // )
+                TokenClass::Keyword,  // in
+                TokenClass::Name,     // cm
+                TokenClass::Operator, // =>
+            ],
+            "got {:?}",
+            spans[1]
+        );
+    }
+
+    #[test]
+    fn completions_carry_current_values() {
+        let source = "    speed = 30 mph\n    distance = 60 miles\n";
+        let all = completions(source, 2, "");
+        let speed = all.iter().find(|c| c.name == "speed").expect("speed");
+        assert!(speed.from_document);
+        assert_eq!(speed.value, "30 mph");
+        // Document names come before any prelude name.
+        assert!(all[0].from_document && all[1].from_document);
+        // Prelude names are offered too.
+        assert!(all.iter().any(|c| c.name == "gallon" && !c.from_document));
+    }
+
+    #[test]
+    fn completions_match_inner_words_and_respect_position() {
+        let source = "    fuel price = 3.45\n\n    x = 1\n";
+        // `pr` matches the second word of `fuel price`.
+        let hits = completions(source, 3, "pr");
+        assert!(hits.iter().any(|c| c.name == "fuel price"));
+        // At line 0 nothing from the document is defined yet.
+        assert!(completions(source, 0, "fu").iter().all(|c| !c.from_document));
+    }
 
     #[test]
     fn classifies_prose_and_code() {

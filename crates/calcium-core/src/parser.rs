@@ -18,7 +18,7 @@ use crate::num::Num;
 /// Words that never merge into a multi-word identifier.
 const KEYWORDS: &[&str] = &["if", "then", "else", "let", "in", "mod", "true", "false"];
 
-fn is_keyword(word: &str) -> bool {
+pub fn is_keyword(word: &str) -> bool {
     KEYWORDS.contains(&word)
 }
 

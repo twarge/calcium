@@ -275,6 +275,11 @@ impl Env {
         self.order.iter().rev()
     }
 
+    /// Every name the prelude defines, for completion menus.
+    pub fn prelude_names(&self) -> impl Iterator<Item = &String> {
+        self.prelude.keys()
+    }
+
     /// Resolves a name that is not explicitly defined but is a prefixed SI
     /// unit, e.g. `nW` as `1e-9 * W`.
     fn resolve_si_prefix(&self, name: &str) -> Option<Expr> {
