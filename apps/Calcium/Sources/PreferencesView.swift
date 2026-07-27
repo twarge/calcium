@@ -15,6 +15,8 @@ struct PreferencesView: View {
     @AppStorage("hideTitleBar") private var hideTitleBar = true
     @AppStorage("proseSpelling") private var proseSpelling = true
     @AppStorage("proseAutocorrect") private var proseAutocorrect = true
+    @AppStorage("starterText") private var starterText = true
+    @AppStorage("completions") private var completions = true
 
     var body: some View {
         Form {
@@ -45,6 +47,15 @@ struct PreferencesView: View {
             }
 
             Section {
+                Toggle("Complete names while typing", isOn: $completions)
+                Text("Suggestions with current values appear as you type a name in a calculation.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Completions")
+            }
+
+            Section {
                 Toggle("Check spelling in prose", isOn: $proseSpelling)
                 Toggle("Correct spelling automatically", isOn: $proseAutocorrect)
                     .disabled(!proseSpelling)
@@ -59,6 +70,15 @@ struct PreferencesView: View {
                 Toggle("Hide the title bar until the pointer is over it", isOn: $hideTitleBar)
             } header: {
                 Text("Window")
+            }
+
+            Section {
+                Toggle("Start new documents with the sample text", isOn: $starterText)
+                Text("Off means a new document opens empty.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("New Documents")
             }
         }
         .formStyle(.grouped)

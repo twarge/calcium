@@ -621,6 +621,10 @@ struct EditorView: NSViewRepresentable {
         /// Offers names after two typed characters on a code line, values
         /// included, anchored under the word being typed.
         func updateCompletions(in textView: NSTextView) {
+            guard UserDefaults.standard.object(forKey: "completions") as? Bool ?? true else {
+                completionPanel.hide()
+                return
+            }
             let caret = textView.selectedRange()
             let text = textView.string as NSString
             guard caret.length == 0,

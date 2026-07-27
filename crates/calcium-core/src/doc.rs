@@ -617,15 +617,18 @@ pub struct Completion {
 }
 
 /// Names usable at `line` that match `prefix`: the document's own
-/// definitions first, in definition order with current values, then prelude
-/// names alphabetically.
+/// definitions first, in definition order, then prelude names
+/// alphabetically — every one carrying its current value.
 ///
 /// A name matches if it — or any word of it, names may contain spaces —
 /// starts with the prefix, case-insensitively. An empty prefix matches all.
 ///
 /// Values come from one evaluation: the document up to `line` with a probe
-/// `=>` appended per name, so each answer is exactly what the editor would
-/// print for that name at that point.
+/// `=>` appended per *matching* name — matching, so the per-keystroke cost
+/// scales with the menu, not the prelude — and each answer is exactly what
+/// the editor would print for that name at that point. A name that merely
+/// echoes itself, as a base unit like `gallon` does, keeps an empty value:
+/// "gallon   gallon" is noise.
 pub fn completions(source: &str, line: usize, prefix: &str) -> Vec<Completion> {
     let upto = source
         .lines()
@@ -647,44 +650,64 @@ pub fn completions(source: &str, line: usize, prefix: &str) -> Vec<Completion> {
             }
         }
     }
+    let doc_matches: Vec<String> = names
+        .iter()
+        .filter(|name| completion_match(name, prefix))
+        .cloned()
+        .collect();
+
+    let env = Env::with_prelude();
+    let mut prelude_matches: Vec<String> = env
+        .prelude_names()
+        .filter(|name| !seen.contains(*name) && completion_match(name, prefix))
+        .cloned()
+        .collect();
+    prelude_matches.sort();
 
     let base = upto.lines().count();
     let mut probed = upto;
-    for name in &names {
+    for name in &doc_matches {
         probed.push_str("\n    ");
         probed.push_str(name);
         probed.push_str(" =>");
     }
     let document = evaluate(&probed);
 
-    let mut out: Vec<Completion> = Vec::new();
-    for (i, name) in names.iter().enumerate() {
-        if !completion_match(name, prefix) {
-            continue;
-        }
-        let value = document
-            .answers
-            .iter()
-            .find(|a| a.line == base + i && !a.is_error)
-            .map(|a| a.text.clone())
-            .unwrap_or_default();
-        out.push(Completion {
-            name: name.clone(),
-            value,
-            from_document: true,
-        });
-    }
-
-    let env = Env::with_prelude();
-    let mut from_prelude: Vec<&String> = env
-        .prelude_names()
-        .filter(|name| !seen.contains(*name) && completion_match(name, prefix))
+    let mut out: Vec<Completion> = doc_matches
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let value = document
+                .answers
+                .iter()
+                .find(|a| a.line == base + i && !a.is_error)
+                .map(|a| a.text.clone())
+                .filter(|value| value != name)
+                .unwrap_or_default();
+            Completion {
+                name: name.clone(),
+                value,
+                from_document: true,
+            }
+        })
         .collect();
-    from_prelude.sort();
-    out.extend(from_prelude.into_iter().map(|name| Completion {
-        name: name.clone(),
-        value: String::new(),
-        from_document: false,
+
+    // A prelude name cannot be probed — prelude definitions are opaque
+    // until conversion, so `pi =>` answers `pi` — but its definition body
+    // *is* its value: `pi` beside 3.1416, `gauss` beside T/10000. Functions
+    // and self-referential base units show nothing.
+    out.extend(prelude_matches.into_iter().map(|name| {
+        let value = env
+            .prelude_def(&name)
+            .filter(|def| def.params.is_none())
+            .map(|def| crate::format::render(&def.body))
+            .filter(|body| body != &name && body.len() <= 40)
+            .unwrap_or_default();
+        Completion {
+            name,
+            value,
+            from_document: false,
+        }
     }));
     out
 }
@@ -773,6 +796,16 @@ mod tests {
         assert!(all[0].from_document && all[1].from_document);
         // Prelude names are offered too.
         assert!(all.iter().any(|c| c.name == "gallon" && !c.from_document));
+    }
+
+    #[test]
+    fn prelude_completions_carry_their_definitions_as_values() {
+        let pi = completions("", 0, "pi");
+        let pi = pi.iter().find(|c| c.name == "pi").expect("pi");
+        assert!(!pi.value.is_empty(), "pi should show its value");
+        let gallon = completions("", 0, "gallon");
+        let gallon = gallon.iter().find(|c| c.name == "gallon").expect("gallon");
+        assert!(!gallon.value.is_empty(), "gallon should show its meaning");
     }
 
     #[test]

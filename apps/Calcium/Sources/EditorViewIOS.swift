@@ -586,6 +586,10 @@ struct EditorViewIOS: UIViewRepresentable {
 
         func updateCompletions(in textView: UITextView) {
             guard let keypad else { return }
+            guard UserDefaults.standard.object(forKey: "completions") as? Bool ?? true else {
+                keypad.showSuggestions([])
+                return
+            }
             let caret = textView.selectedRange
             let text = textView.text as NSString
             guard caret.length == 0,

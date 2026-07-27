@@ -35,8 +35,15 @@ struct CalciumDocument: FileDocument {
         [.calciumDocument, .calcaDocument]
     }
 
-    init(text: String = CalciumDocument.starter) {
+    init(text: String = CalciumDocument.defaultText) {
         self.text = text
+    }
+
+    /// What a new document opens with: the sample text, or nothing, per the
+    /// preference.
+    static var defaultText: String {
+        (UserDefaults.standard.object(forKey: "starterText") as? Bool ?? true)
+            ? starter : ""
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -65,17 +72,23 @@ struct CalciumDocument: FileDocument {
     }
 
     static let starter = """
-        # Untitled
+        # Calcium
 
-        Write anything here. Indent a line to make it a calculation, and put
-        `=>` where you want the answer.
+        Write math expressions and use `=>` to see the answer.
 
-            2 + 2 =>
+            1 + 2 =>
 
-            radius = 3
-            area   = pi * radius^2 =>
+        Odd units!
 
-            100 ft in m =>
+            walking speed = 1 mph
+            walking speed in furlongs/fortnight
+                =>
+
+        _Unknown_ units **cancel**!
+
+            burrito length = 1 ft / burrito
+            burrito cost = 8 USD / burrito
+            1 mile / burrito length * burrito cost in kEUR =>
 
         """
 }

@@ -280,6 +280,12 @@ impl Env {
         self.prelude.keys()
     }
 
+    /// A prelude name's definition, for completion menus: `pi` reads better
+    /// beside its value, a unit beside its meaning.
+    pub fn prelude_def(&self, name: &str) -> Option<&Def> {
+        self.prelude.get(name)
+    }
+
     /// Resolves a name that is not explicitly defined but is a prefixed SI
     /// unit, e.g. `nW` as `1e-9 * W`.
     fn resolve_si_prefix(&self, name: &str) -> Option<Expr> {
