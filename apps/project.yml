@@ -28,7 +28,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.twarge.calcium
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.0"
+        SWIFT_VERSION: "6.0"
         # XcodeGen's deploymentTarget block does not reach a
         # supportedDestinations target; without these the beta SDK's own
         # version becomes the floor and the app refuses older simulators.

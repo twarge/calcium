@@ -84,6 +84,15 @@ struct PreferencesView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .fixedSize()
+        // Open documents restyle live. Explicit sends rather than observing
+        // UserDefaults: notification closures are @Sendable under Swift 6
+        // and cannot carry the main-actor coordinators.
+        .onChange(of: fontSize) { CommandBus.shared.send(.preferencesChanged) }
+        .onChange(of: ligatures) { CommandBus.shared.send(.preferencesChanged) }
+        .onChange(of: proseSystemFont) { CommandBus.shared.send(.preferencesChanged) }
+        .onChange(of: proseSpelling) { CommandBus.shared.send(.preferencesChanged) }
+        .onChange(of: proseAutocorrect) { CommandBus.shared.send(.preferencesChanged) }
+        .onChange(of: completions) { CommandBus.shared.send(.preferencesChanged) }
     }
 }
 #endif

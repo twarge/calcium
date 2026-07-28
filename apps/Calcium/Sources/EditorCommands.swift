@@ -1,12 +1,46 @@
 import Foundation
 
-/// Editor commands travel by notification: menu items and toolbar controls
-/// cannot see the focused coordinator, so they broadcast and the key
-/// window's editor acts.
-extension Notification.Name {
-    static let calciumToggleComment = Notification.Name("calciumToggleComment")
-    static let calciumIndent = Notification.Name("calciumIndent")
-    static let calciumOutdent = Notification.Name("calciumOutdent")
-    /// userInfo: `["line": Int]`, 0-based.
-    static let calciumJumpToLine = Notification.Name("calciumJumpToLine")
+/// Editor commands travel over a small main-actor bus rather than
+/// NotificationCenter: under Swift 6, notification closures are @Sendable
+/// and cannot carry the main-actor coordinators.
+enum EditorCommand {
+    case toggleComment
+    case indent
+    case outdent
+    case jump(line: Int)
+    /// Preferences changed; restyle open documents.
+    case preferencesChanged
+}
+
+@MainActor
+final class CommandBus {
+    static let shared = CommandBus()
+
+    /// A handler returns true if it acted — it belonged to the key window —
+    /// which stops delivery; `preferencesChanged` goes to everyone.
+    private var handlers: [(EditorCommand) -> Bool] = []
+
+    func register(_ handler: @escaping (EditorCommand) -> Bool) {
+        handlers.append(handler)
+    }
+
+    func send(_ command: EditorCommand) {
+        if case .preferencesChanged = command {
+            for handler in handlers {
+                _ = handler(command)
+            }
+            return
+        }
+        for handler in handlers where handler(command) {
+            break
+        }
+    }
+}
+
+/// A weak reference allowed across @Sendable boundaries — KVO handlers and
+/// system callbacks documented to run on the main thread — where the callee
+/// re-enters the actor explicitly with `MainActor.assumeIsolated`.
+struct MainActorWeak<T: AnyObject>: @unchecked Sendable {
+    weak var value: T?
+    init(_ value: T?) { self.value = value }
 }

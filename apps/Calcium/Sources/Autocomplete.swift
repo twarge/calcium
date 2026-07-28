@@ -9,6 +9,7 @@ import FoundationModels
 /// *author's* text, not an answer. So it is inserted through the ordinary
 /// editing path where undo records it, and once it lands the `#?` is gone —
 /// which is also what makes the whole thing idempotent. No marker, no query.
+@MainActor
 final class Autocomplete {
     /// Lines already being asked about, keyed by their text, so a slow reply
     /// is not requested twice while the first is still thinking.

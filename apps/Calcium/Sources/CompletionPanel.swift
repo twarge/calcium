@@ -5,6 +5,7 @@ import AppKit
 /// typed, listing names with their current values. Never becomes key — the
 /// text view keeps focus and routes ↑ ↓ Tab Return Esc here from its
 /// `doCommandBy` while the panel shows.
+@MainActor
 final class CompletionPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     private let panel: NSPanel
     private let table = NSTableView()

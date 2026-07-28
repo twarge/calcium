@@ -77,9 +77,7 @@ private struct OutlineMenu: View {
                     Button(
                         String(repeating: "    ", count: heading.level - 1) + heading.title
                     ) {
-                        NotificationCenter.default.post(
-                            name: .calciumJumpToLine, object: nil,
-                            userInfo: ["line": heading.line])
+                        CommandBus.shared.send(.jump(line: heading.line))
                     }
                 }
             }

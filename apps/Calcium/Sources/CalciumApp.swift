@@ -57,13 +57,15 @@ private struct FindCommands: View {
 /// the menu bar. It is deleted here at the AppKit level — and again whenever
 /// a window becomes main, because SwiftUI rebuilds the main menu as scenes
 /// come and go.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.removeFormatMenu()
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main
         ) { _ in
-            AppDelegate.removeFormatMenu()
+            // Window notifications arrive on the main thread.
+            MainActor.assumeIsolated { AppDelegate.removeFormatMenu() }
         }
     }
 
@@ -129,24 +131,18 @@ struct CalciumApp: App {
                 FindCommands()
             }
             #endif
-            // Line commands, delivered by notification to the key window's
-            // editor. Comment toggling only touches indented lines — an
+            // Line commands, delivered over the command bus to the key
+            // window's editor. Comment toggling only touches indented lines — an
             // unindented leading `#` would be a heading — and indenting is
             // meaningful here: it is what makes a line a calculation.
             CommandGroup(after: .pasteboard) {
                 Divider()
-                Button("Toggle Comment") {
-                    NotificationCenter.default.post(name: .calciumToggleComment, object: nil)
-                }
-                .keyboardShortcut("/", modifiers: .command)
-                Button("Indent") {
-                    NotificationCenter.default.post(name: .calciumIndent, object: nil)
-                }
-                .keyboardShortcut("]", modifiers: .command)
-                Button("Outdent") {
-                    NotificationCenter.default.post(name: .calciumOutdent, object: nil)
-                }
-                .keyboardShortcut("[", modifiers: .command)
+                Button("Toggle Comment") { CommandBus.shared.send(.toggleComment) }
+                    .keyboardShortcut("/", modifiers: .command)
+                Button("Indent") { CommandBus.shared.send(.indent) }
+                    .keyboardShortcut("]", modifiers: .command)
+                Button("Outdent") { CommandBus.shared.send(.outdent) }
+                    .keyboardShortcut("[", modifiers: .command)
             }
             #if os(iOS)
             // On the Mac, ⌘N already means "new document window" and the

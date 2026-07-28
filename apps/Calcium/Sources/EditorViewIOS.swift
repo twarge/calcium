@@ -44,7 +44,8 @@ struct EditorViewIOS: UIViewRepresentable {
         context.coordinator.fileURL = fileURL
         context.coordinator.restoreViewState(in: textView)
         context.coordinator.installCommands(for: textView)
-        DispatchQueue.main.async { context.coordinator.refresh(textView) }
+        let coordinator = context.coordinator
+        Task { coordinator.refresh(textView) }
         return textView
     }
 
@@ -52,17 +53,19 @@ struct EditorViewIOS: UIViewRepresentable {
         context.coordinator.fileURL = fileURL
         guard textView.text != text else { return }
         textView.text = text
-        DispatchQueue.main.async { context.coordinator.refresh(textView) }
+        let coordinator = context.coordinator
+        Task { coordinator.refresh(textView) }
     }
 
+    @MainActor
     final class Coordinator: NSObject, UITextViewDelegate {
         private var parent: EditorViewIOS
         var fileURL: URL?
         private var answerRegions: [(range: NSRange, isError: Bool)] = []
         private var lastAnswerByLine: [Int: String] = [:]
         private var isSplicing = false
-        private var scheduled: DispatchWorkItem?
-        private var statePersist: DispatchWorkItem?
+        private var scheduled: Task<Void, Never>?
+        private var statePersist: Task<Void, Never>?
 
         init(_ parent: EditorViewIOS) {
             self.parent = parent
@@ -81,13 +84,13 @@ struct EditorViewIOS: UIViewRepresentable {
 
         private func persistViewStateSoon(for textView: UITextView) {
             statePersist?.cancel()
-            let item = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView, let url = self.fileURL else { return }
+            statePersist = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled, let self, let textView,
+                      let url = self.fileURL else { return }
                 DocumentViewState(scale: 1, cursor: textView.selectedRange.location)
                     .save(to: url)
             }
-            statePersist = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -182,13 +185,12 @@ struct EditorViewIOS: UIViewRepresentable {
             parent.text = textView.text
             // Restyle even while evaluation waits.
             highlight(textView, lines: Engine.lines(of: textView.text))
-            let item = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView else { return }
+            scheduled = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled, let self, let textView else { return }
                 guard textView.markedTextRange == nil else { return }
                 self.refresh(textView)
             }
-            scheduled = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
             updateCompletions(in: textView)
         }
 
@@ -507,27 +509,16 @@ struct EditorViewIOS: UIViewRepresentable {
         // MARK: Line commands (port of the Mac coordinator's)
 
         func installCommands(for textView: UITextView) {
-            let center = NotificationCenter.default
-            let whenActive = { [weak self, weak textView] (act: @escaping (Coordinator, UITextView) -> Void) in
-                { (_: Notification) in
-                    guard let self, let textView, textView.isFirstResponder else { return }
-                    act(self, textView)
-                }
-            }
-            center.addObserver(
-                forName: .calciumToggleComment, object: nil, queue: .main,
-                using: whenActive { this, view in
-                    this.transformSelectedLines(view) { this.toggledComment($0) }
-                })
-            center.addObserver(
-                forName: .calciumIndent, object: nil, queue: .main,
-                using: whenActive { this, view in
-                    this.transformSelectedLines(view) { $0.isEmpty ? nil : "    " + $0 }
-                })
-            center.addObserver(
-                forName: .calciumOutdent, object: nil, queue: .main,
-                using: whenActive { this, view in
-                    this.transformSelectedLines(view) { line in
+            CommandBus.shared.register { [weak self, weak textView] command in
+                guard let self, let textView, textView.isFirstResponder
+                else { return false }
+                switch command {
+                case .toggleComment:
+                    self.transformSelectedLines(textView) { self.toggledComment($0) }
+                case .indent:
+                    self.transformSelectedLines(textView) { $0.isEmpty ? nil : "    " + $0 }
+                case .outdent:
+                    self.transformSelectedLines(textView) { line in
                         if line.hasPrefix("\t") { return String(line.dropFirst()) }
                         var trimmed = line
                         var removed = 0
@@ -537,7 +528,11 @@ struct EditorViewIOS: UIViewRepresentable {
                         }
                         return removed > 0 ? trimmed : nil
                     }
-                })
+                case .jump, .preferencesChanged:
+                    return false
+                }
+                return true
+            }
         }
 
         private func toggledComment(_ line: String) -> String? {

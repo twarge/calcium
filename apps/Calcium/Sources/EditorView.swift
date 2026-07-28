@@ -66,9 +66,10 @@ struct EditorView: NSViewRepresentable {
         // Not synchronously: publishing answers is a state change and this is
         // still SwiftUI's view-building pass. By the time this runs the view
         // is in its window, which the inset measurement needs.
-        DispatchQueue.main.async {
-            context.coordinator.measureChromeInset(of: scrollView)
-            context.coordinator.refresh(textView)
+        let coordinator = context.coordinator
+        Task {
+            coordinator.measureChromeInset(of: scrollView)
+            coordinator.refresh(textView)
         }
         return scrollView
     }
@@ -80,7 +81,8 @@ struct EditorView: NSViewRepresentable {
         // while the user is typing would collapse the selection and clear undo.
         guard textView.string != text else { return }
         textView.string = text
-        DispatchQueue.main.async { context.coordinator.refresh(textView) }
+        let coordinator = context.coordinator
+        Task { coordinator.refresh(textView) }
     }
 
     private func configure(_ textView: NSTextView) {
@@ -123,6 +125,7 @@ struct EditorView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate, NSGestureRecognizerDelegate {
         private var parent: EditorView
         /// Line classification from the most recent highlight, for the typing
@@ -137,7 +140,7 @@ struct EditorView: NSViewRepresentable {
         /// the user's.
         private var isSplicing = false
         /// The pending recompute, cancelled and rescheduled on every keystroke.
-        private var scheduled: DispatchWorkItem?
+        private var scheduled: Task<Void, Never>?
         /// The text view's own undo stack.
         ///
         /// Without this it shares the window's, which under `DocumentGroup` is
@@ -234,18 +237,25 @@ struct EditorView: NSViewRepresentable {
         /// the text must clear.
         func measureChromeInset(of scrollView: NSScrollView) {
             guard chromeObservation == nil, let window = scrollView.window else { return }
+            // KVO hands a @Sendable closure; layout KVO fires on the main
+            // thread, re-entered explicitly.
+            let box = MainActorWeak(scrollView)
             chromeObservation = window.observe(\.contentLayoutRect, options: [.initial]) {
-                [weak scrollView] window, _ in
-                guard let scrollView, let contentView = window.contentView else { return }
-                let measured = contentView.frame.height - window.contentLayoutRect.height
-                let current = scrollView.contentInsets.top
-                guard measured > current else { return }
-                // If the view is resting at the top, keep it resting at the
-                // new top rather than leaving the first line under the chrome.
-                let atTop = scrollView.contentView.bounds.origin.y <= -(current - 1)
-                scrollView.contentInsets.top = measured
-                if atTop {
-                    scrollView.documentView?.scroll(NSPoint(x: 0, y: -measured))
+                window, _ in
+                MainActor.assumeIsolated {
+                    guard let scrollView = box.value,
+                          let contentView = window.contentView else { return }
+                    let measured = contentView.frame.height - window.contentLayoutRect.height
+                    let current = scrollView.contentInsets.top
+                    guard measured > current else { return }
+                    // If the view is resting at the top, keep it resting at
+                    // the new top rather than leaving the first line under
+                    // the chrome.
+                    let atTop = scrollView.contentView.bounds.origin.y <= -(current - 1)
+                    scrollView.contentInsets.top = measured
+                    if atTop {
+                        scrollView.documentView?.scroll(NSPoint(x: 0, y: -measured))
+                    }
                 }
             }
         }
@@ -257,7 +267,7 @@ struct EditorView: NSViewRepresentable {
         /// This document's zoom. Multiplies the Preferences font size.
         private var scale: CGFloat = 1
         /// Debounces state writes; arrow keys should not each cost an xattr.
-        private var statePersist: DispatchWorkItem?
+        private var statePersist: Task<Void, Never>?
 
         func restoreViewState(in textView: NSTextView) {
             guard let url = fileURL, let state = DocumentViewState.load(from: url) else {
@@ -271,15 +281,15 @@ struct EditorView: NSViewRepresentable {
 
         private func persistViewStateSoon(for textView: NSTextView) {
             statePersist?.cancel()
-            let item = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView, let url = self.fileURL else { return }
+            statePersist = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled, let self, let textView,
+                      let url = self.fileURL else { return }
                 DocumentViewState(
                     scale: Double(self.scale),
                     cursor: textView.selectedRange().location
                 ).save(to: url)
             }
-            statePersist = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -351,17 +361,17 @@ struct EditorView: NSViewRepresentable {
         /// ⌘+ / ⌘− / ⌘0, through the same path as the pinch. Installed as a
         /// local monitor because the coordinator is not in the responder
         /// chain, and a text-view subclass would cost the system factory.
-        private var keyMonitor: Any?
+        nonisolated(unsafe) private var keyMonitor: Any?
 
         /// Re-styles when Preferences change, so an open document follows the
         /// font-size slider live.
         func followPreferences(of textView: NSTextView) {
-            NotificationCenter.default.addObserver(
-                forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-            ) { [weak self, weak textView] _ in
-                guard let self, let textView else { return }
+            CommandBus.shared.register { [weak self, weak textView] command in
+                guard case .preferencesChanged = command,
+                      let self, let textView else { return false }
                 self.rescale(textView)
                 self.applyProofing(to: textView)
+                return false
             }
         }
 
@@ -387,8 +397,9 @@ struct EditorView: NSViewRepresentable {
         }
 
         deinit {
+            // The coordinator deallocates on the main thread with its view.
             if let keyMonitor {
-                NSEvent.removeMonitor(keyMonitor)
+                MainActor.assumeIsolated { NSEvent.removeMonitor(keyMonitor) }
             }
         }
 
@@ -550,8 +561,9 @@ struct EditorView: NSViewRepresentable {
         /// path every `#?` query takes.
         private func scheduleRefresh(of textView: NSTextView) {
             scheduled?.cancel()
-            let item = DispatchWorkItem { [weak self, weak textView] in
-                guard let self, let textView else { return }
+            scheduled = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled, let self, let textView else { return }
                 // Never interrupt an in-progress input method composition.
                 guard !textView.hasMarkedText() else {
                     self.scheduleRefresh(of: textView)
@@ -559,8 +571,6 @@ struct EditorView: NSViewRepresentable {
                 }
                 self.refresh(textView)
             }
-            scheduled = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
         }
 
         /// The `=>` geometry of the line containing `location`, read from the
@@ -667,31 +677,19 @@ struct EditorView: NSViewRepresentable {
 
         // MARK: Line commands
 
-        /// Menu commands arrive by notification — the menu cannot see the
+        /// Menu commands arrive over the bus — the menu cannot see the
         /// focused coordinator — and the key window's editor acts.
         func installCommands(for textView: NSTextView) {
-            let center = NotificationCenter.default
-            let forKeyWindow = { [weak self, weak textView] (act: @escaping (Coordinator, NSTextView) -> Void) in
-                { (_: Notification) in
-                    guard let self, let textView,
-                          textView.window?.isKeyWindow == true else { return }
-                    act(self, textView)
-                }
-            }
-            center.addObserver(
-                forName: .calciumToggleComment, object: nil, queue: .main,
-                using: forKeyWindow { this, view in
-                    this.transformSelectedLines(view) { this.toggledComment($0) }
-                })
-            center.addObserver(
-                forName: .calciumIndent, object: nil, queue: .main,
-                using: forKeyWindow { this, view in
-                    this.transformSelectedLines(view) { $0.isEmpty ? nil : "    " + $0 }
-                })
-            center.addObserver(
-                forName: .calciumOutdent, object: nil, queue: .main,
-                using: forKeyWindow { this, view in
-                    this.transformSelectedLines(view) { line in
+            CommandBus.shared.register { [weak self, weak textView] command in
+                guard let self, let textView,
+                      textView.window?.isKeyWindow == true else { return false }
+                switch command {
+                case .toggleComment:
+                    self.transformSelectedLines(textView) { self.toggledComment($0) }
+                case .indent:
+                    self.transformSelectedLines(textView) { $0.isEmpty ? nil : "    " + $0 }
+                case .outdent:
+                    self.transformSelectedLines(textView) { line in
                         if line.hasPrefix("\t") { return String(line.dropFirst()) }
                         var trimmed = line
                         var removed = 0
@@ -701,14 +699,12 @@ struct EditorView: NSViewRepresentable {
                         }
                         return removed > 0 ? trimmed : nil
                     }
-                })
-            center.addObserver(
-                forName: .calciumJumpToLine, object: nil, queue: .main
-            ) { [weak self, weak textView] note in
-                guard let self, let textView, textView.window?.isKeyWindow == true,
-                      let line = note.userInfo?["line"] as? Int
-                else { return }
-                self.jump(to: line, in: textView)
+                case .jump(let line):
+                    self.jump(to: line, in: textView)
+                case .preferencesChanged:
+                    return false
+                }
+                return true
             }
         }
 
