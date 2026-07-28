@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Generates the Xcode project and builds the app.
+# Builds the app. The Xcode project is maintained in Xcode and committed —
+# it is no longer generated; edit settings there, not in a yml.
 #
 #   ./apps/build.sh            debug build
 #   ./apps/build.sh release    release build
@@ -18,9 +19,6 @@ esac
 # evaluate a document.
 echo "==> Rust engine (release)"
 (cd .. && cargo build --release -p calcium-ffi)
-
-echo "==> Xcode project"
-xcodegen generate --quiet
 
 echo "==> App ($XC_CONFIG)"
 set +e
