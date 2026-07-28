@@ -35,13 +35,18 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         ENABLE_HARDENED_RUNTIME: YES
-        # Unsigned wherever unsigned runs — local macOS builds and the
-        # simulator. A physical iPhone or iPad refuses an app with no
-        # signature at install, so the device SDK signs for real: Xcode
-        # manages the certificate and profile under the Twinleaf team.
+        # The simulator runs unsigned. macOS signs ad-hoc — entitlements
+        # only exist when embedded at signing, and the App Sandbox is one —
+        # and a physical iPhone or iPad refuses an app with no signature at
+        # install, so the device SDK signs for real: Xcode manages the
+        # certificate and profile under the Twinleaf team.
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
+        "CODE_SIGNING_ALLOWED[sdk=macosx*]": YES
+        # macOS only: iOS is always sandboxed, and an unexpected entitlement
+        # would foul device provisioning.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Calcium/Calcium.entitlements
         "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
         "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
         "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
