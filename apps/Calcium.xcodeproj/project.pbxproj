@@ -30,7 +30,7 @@
 		09B7793ED420EEAAEEA4E8EC /* CalciumDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalciumDocument.swift; sourceTree = "<group>"; };
 		18E3AF071BA00D2D21BF09FB /* CompletionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPanel.swift; sourceTree = "<group>"; };
 		1C301BA0702E182F43ACAEF1 /* EditorViewIOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViewIOS.swift; sourceTree = "<group>"; };
-		3C07A28F85489EC88C1BACF0 /* Calcium.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Calcium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3C07A28F85489EC88C1BACF0 /* Calcium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Calcium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E562C67F8599B8B0DAF92F4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		9389DBEA4BA74E1CF10AC29E /* Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine.swift; sourceTree = "<group>"; };
@@ -280,6 +280,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				"CODE_SIGNING_ALLOWED[sdk=iphoneos*]" = YES;
+				"ARCHS[sdk=macosx*]" = arm64;
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
@@ -292,6 +293,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
 				INFOPLIST_FILE = Calcium/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -305,7 +307,11 @@
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
-				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi -weak_framework FoundationModels";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"-lcalcium_ffi",
+					"-weak_framework",
+					FoundationModels,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium;
 				PRODUCT_NAME = Calcium;
 				SDKROOT = auto;
@@ -380,6 +386,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
 				"CODE_SIGNING_ALLOWED[sdk=iphoneos*]" = YES;
+				"ARCHS[sdk=macosx*]" = arm64;
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
@@ -392,6 +399,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
 				INFOPLIST_FILE = Calcium/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -405,7 +413,11 @@
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
-				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi -weak_framework FoundationModels";
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"-lcalcium_ffi",
+					"-weak_framework",
+					FoundationModels,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium;
 				PRODUCT_NAME = Calcium;
 				SDKROOT = auto;
