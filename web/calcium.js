@@ -82,13 +82,37 @@ function splice(text, answers, caret) {
 const escapeHTML = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// Markdown links on prose lines become real anchors — the backdrop sits
+// above the textarea with pointer-events off, and the anchors alone opt
+// back in, so link clicks land while every other click falls through to
+// the caret. http(s) only; anything else stays plain text.
+const LINK = /\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+function linkifyProse(line) {
+  let html = "";
+  let pos = 0;
+  for (const m of line.matchAll(LINK)) {
+    const url = m[2];
+    if (!/^https?:\/\//i.test(url)) continue;
+    html += escapeHTML(line.slice(pos, m.index));
+    html += `<span class="dim">[</span>` +
+      `<a href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(m[1])}</a>` +
+      `<span class="dim">](${escapeHTML(url)})</span>`;
+    pos = m.index + m[0].length;
+  }
+  html += escapeHTML(line.slice(pos));
+  return html;
+}
+
 function renderBackdrop(text, answers, info, toks) {
   const answerByLine = new Map(answers.map((a) => [a.line, a]));
   return text
     .split("\n")
     .map((line, i) => {
       const meta = info[i] ?? { kind: "code" };
-      let cls = meta.kind === "heading" ? "heading" : meta.kind === "prose" ? "prose" : "";
+      if (meta.kind === "prose") {
+        return `<span class="prose">${linkifyProse(line)}</span>`;
+      }
+      let cls = meta.kind === "heading" ? "heading" : "";
 
       // Split the line into optionally-styled segments, left to right.
       // Redefinition first, so on an equal start its underline wins the

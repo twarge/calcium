@@ -59,7 +59,12 @@
     word-wrap: break-word;
     overflow-y: auto;
   }
-  .backdrop { color: var(--ink); pointer-events: none; }
+  /* The backdrop paints above the textarea, pointer-transparent, so its
+     anchors are clickable; the caret and selection draw beneath and show
+     through. Everything that is not an anchor falls through to the text. */
+  .backdrop { color: var(--ink); pointer-events: none; z-index: 1; }
+  .backdrop a { color: var(--tok-num); pointer-events: auto; }
+  .backdrop .dim { color: var(--dim); opacity: 0.7; }
   textarea {
     background: transparent;
     color: transparent;
@@ -69,6 +74,7 @@
     resize: none;
     width: 100%;
     height: 100%;
+    z-index: 0;
   }
   .prose   { color: var(--dim); }
   .heading { font-weight: 700; }

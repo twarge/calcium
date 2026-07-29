@@ -39,6 +39,13 @@ struct EditorViewIOS: UIViewRepresentable {
         textView.spellCheckingType = .no
         textView.keyboardType = .asciiCapable
 
+        // Links open on tap; the recognizer's delegate admits only touches
+        // that land on one, so ordinary taps place the caret untouched.
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.tappedLink(_:)))
+        tap.delegate = context.coordinator
+        textView.addGestureRecognizer(tap)
+
         textView.delegate = context.coordinator
         textView.text = text
         context.coordinator.fileURL = fileURL
@@ -58,7 +65,7 @@ struct EditorViewIOS: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         private var parent: EditorViewIOS
         var fileURL: URL?
         private var answerRegions: [(range: NSRange, isError: Bool)] = []
@@ -503,7 +510,53 @@ struct EditorViewIOS: UIViewRepresentable {
                     location: lineRange.location + match.range(at: 1).location,
                     length: match.range(at: 1).length)
                 storage.addAttribute(.foregroundColor, value: UIColor.link, range: title)
+                let target = (line as NSString).substring(with: match.range(at: 2))
+                if let url = URL(string: target),
+                   url.scheme == "http" || url.scheme == "https"
+                {
+                    storage.addAttribute(.link, value: url, range: title)
+                }
             }
+        }
+
+        // MARK: Links
+
+        /// The link under a point, if the point is actually on its glyphs —
+        /// `closestPosition` alone would snap taps in empty space to the
+        /// nearest character and open links nobody touched.
+        private func link(at point: CGPoint, in textView: UITextView) -> URL? {
+            let inset = textView.textContainerInset
+            let location = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+            let layout = textView.layoutManager
+            let index = layout.characterIndex(
+                for: location, in: textView.textContainer,
+                fractionOfDistanceBetweenInsertionPoints: nil)
+            guard index < textView.textStorage.length else { return nil }
+            let glyphs = layout.glyphRange(
+                forCharacterRange: NSRange(location: index, length: 1),
+                actualCharacterRange: nil)
+            guard layout.boundingRect(forGlyphRange: glyphs, in: textView.textContainer)
+                .insetBy(dx: -2, dy: -2).contains(location)
+            else { return nil }
+            return textView.textStorage.attribute(.link, at: index, effectiveRange: nil)
+                as? URL
+        }
+
+        /// Claims only touches that land on a link; every other tap places
+        /// the caret as usual. An editable text view never opens its own
+        /// links, so this is the whole mechanism.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+        ) -> Bool {
+            guard let textView = gestureRecognizer.view as? UITextView else { return false }
+            return link(at: touch.location(in: textView), in: textView) != nil
+        }
+
+        @objc func tappedLink(_ recognizer: UITapGestureRecognizer) {
+            guard let textView = recognizer.view as? UITextView,
+                  let url = link(at: recognizer.location(in: textView), in: textView)
+            else { return }
+            UIApplication.shared.open(url)
         }
 
         // MARK: Line commands (port of the Mac coordinator's)
