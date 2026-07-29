@@ -1,0 +1,112 @@
+name: App Store
+
+# Archives and uploads both apps to App Store Connect (TestFlight / review).
+# Run it manually from the Actions tab, or push a version tag like v1.2.
+# Follows the pattern proven in DeXeF, plus the Rust cross-target the
+# engine's pre-build phase needs.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   ASC_KEY_ID     App Store Connect API key ID
+#   ASC_ISSUER_ID  App Store Connect issuer ID
+#   ASC_KEY_P8     Contents of the AuthKey_<KEYID>.p8 file
+# Create the key at App Store Connect → Users and Access → Integrations →
+# App Store Connect API, with the App Manager role (needed for cloud signing).
+#
+# Signing is fully cloud-managed: xcodebuild uses the API key to create and
+# fetch distribution certificates and profiles, and
+# manageAppVersionAndBuildNumber lets it bump CFBundleVersion past whatever
+# App Store Connect already has, so uploads never collide.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Upload (${{ matrix.name }})
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS
+            destination: generic/platform=iOS
+            archive: build/Calcium-iOS.xcarchive
+          - name: macOS
+            destination: generic/platform=macOS
+            archive: build/Calcium-macOS.xcarchive
+    steps:
+      - uses: actions/checkout@v5
+
+      # The project's pre-build phase cross-compiles the engine for the
+      # device; the runner's rustup needs the target installed.
+      - name: Install Rust target
+        if: matrix.name == 'iOS'
+        run: rustup target add aarch64-apple-ios
+
+      - name: Install App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+
+      - name: Write export options
+        run: |
+          cat > build-exportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -project apps/Calcium.xcodeproj \
+            -scheme Calcium \
+            -configuration Release \
+            -destination '${{ matrix.destination }}' \
+            -archivePath '${{ matrix.archive }}' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath '${{ matrix.archive }}' \
+            -exportOptionsPlist build-exportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The engine is portable Rust; its tests and the corpus need no Mac.
+  test:
+    name: Engine tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: cargo test --workspace
+
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            destination: generic/platform=macOS
+            rust-targets: ""
+          - name: iOS Simulator
+            destination: generic/platform=iOS Simulator
+            rust-targets: aarch64-apple-ios-sim x86_64-apple-ios
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # The project's pre-build phase cross-compiles the engine; the
+      # simulator leg links a universal library, so it needs both targets.
+      - name: Install Rust targets
+        if: matrix.rust-targets != ''
+        run: rustup target add ${{ matrix.rust-targets }}
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project apps/Calcium.xcodeproj \
+            -scheme Calcium \
+            -configuration Release \
+            -destination '${{ matrix.destination }}' \
+            CODE_SIGNING_ALLOWED=NO
