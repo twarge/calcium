@@ -171,30 +171,32 @@ editor.addEventListener("scroll", () => {
 
 editor.value = `# Calcium
 
-A text editor that loves math. Everything after \`=>\` is computed, live, by a Rust engine running in your browser.
+Calcium is a text editor that updates math results as you type. Use \`=>\` to compute expressions. (Try it on this web page—it's the same code as the app.)
 
     speed = 88 mph in km/hour =>
     fuel = 12 gallon
     range = fuel * 32 miles/gallon in km =>
 
-Units are algebra. Define your own:
+Odd units!
 
-    dog = 30 lbs
-    1 ton in dog =>
+    walking speed = 1 mph
+    walking speed in furlongs/fortnight
+        => 2,688 furlongs/fortnight
 
-Physical constants are spelled out, and h is Planck's:
+_Unknown_ units **cancel**!
 
-    boltzmann constant * 300 K in J =>
-    2.8024 MHz/gauss in Hz/nT =>
+    burrito length = 1 ft / burrito
+    burrito cost = 8 USD / burrito
+    1 mile / burrito length * burrito cost in kEUR => 37.1307 kEUR
 
 It is a symbolic calculator, too:
-
-    perimeter = 2 * (width + height)
-    width =>
 
     y^2 - 5y + 6 = 0
     y =>
 
-Try editing anything — every answer follows.
+Try it here!
+
+Calcium is free and [open source](https://github.com/twarge/calcium). Feel free to open issues on GitHub.
+
 `;
 refresh();
