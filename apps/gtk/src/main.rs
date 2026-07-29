@@ -46,6 +46,15 @@ struct Editor {
 }
 
 fn build_window(app: &gtk::Application) {
+    // Native window controls where the platform has them — on macOS the
+    // header bar gets real traffic lights (GTK 4.18+). Set by name so the
+    // binding needs no 4.18 feature gate; absent property, nothing happens.
+    if let Some(settings) = gtk::Settings::default() {
+        if settings.has_property("gtk-use-native-controls", None) {
+            settings.set_property("gtk-use-native-controls", true);
+        }
+    }
+
     let buffer = gtk::TextBuffer::new(None);
     buffer.set_enable_undo(true);
     make_tags(&buffer);
