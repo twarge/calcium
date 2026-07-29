@@ -1,0 +1,84 @@
+# Uploads both apps to App Store Connect.
+#
+# Runs on a version tag (v1.0 and the like) or by hand from the Actions
+# tab. Tests gate the uploads; the uploads themselves are xcodebuild all
+# the way down — archive with cloud signing, then -exportArchive with
+# destination: upload, no third-party tooling.
+#
+# Requires three repository secrets, from an App Store Connect API key
+# (Users and Access → Integrations → App Store Connect API; role App
+# Manager or Admin):
+#
+#   ASC_KEY_ID       the key's ID
+#   ASC_ISSUER_ID    the issuer ID shown above the key list
+#   ASC_KEY_P8       the .p8 file's contents, verbatim
+#
+# The app records (com.twarge.calcium, iOS and macOS) must exist in App
+# Store Connect before the first upload.
+
+name: Release to App Store
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine tests and corpus
+        run: cargo test --workspace
+
+  upload:
+    needs: test
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            destination: generic/platform=iOS
+            export_options: apps/ExportOptions-ios.plist
+          - platform: macOS
+            destination: generic/platform=macOS
+            export_options: apps/ExportOptions-mac.plist
+    steps:
+      - uses: actions/checkout@v4
+
+      # The project's pre-build phase cross-compiles the engine; the
+      # runner's rustup needs the device target for the iOS leg.
+      - name: Rust targets
+        if: matrix.platform == 'iOS'
+        run: rustup target add aarch64-apple-ios
+
+      - name: App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$ASC_KEY_P8" \
+            > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project apps/Calcium.xcodeproj -scheme Calcium \
+            -destination "${{ matrix.destination }}" \
+            -archivePath "build/Calcium-${{ matrix.platform }}.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
+            -quiet
+
+      - name: Upload to App Store Connect
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "build/Calcium-${{ matrix.platform }}.xcarchive" \
+            -exportOptionsPlist "${{ matrix.export_options }}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
