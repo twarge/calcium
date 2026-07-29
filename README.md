@@ -63,10 +63,9 @@ between exact rationals and floats, and the engine has the exact one.
 
 ## The app
 
-```bash
-./apps/build.sh            # debug
-./apps/build.sh release
-```
+Open `apps/Calcium.xcodeproj` and build, or equivalently `make mac` /
+`make ios` — the same build either way: one Xcode project, whose
+pre-build phase compiles the Rust engine.
 
 A document-based app for macOS and iOS from a single target: `DocumentGroup`
 with an `NSTextView` editor on the Mac and a `UITextView` editor on iOS, both

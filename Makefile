@@ -23,18 +23,22 @@ engine:
 test:
 	cargo test --workspace
 
+# Exactly what Xcode's own Build does — same scheme, same default
+# DerivedData, the project's pre-build phase compiling the Rust engine —
+# so a make build and a ⌘B are the same build.
 mac:
-	./apps/build.sh
+	xcodebuild -project apps/Calcium.xcodeproj -scheme Calcium \
+	  -destination "platform=macOS" -quiet build
+	@echo "==> Built for macOS"
 
 mac-release:
-	./apps/build.sh release
+	xcodebuild -project apps/Calcium.xcodeproj -scheme Calcium \
+	  -destination "platform=macOS" -configuration Release -quiet build
+	@echo "==> Built for macOS (Release)"
 
-# The Xcode project's own pre-build step cross-compiles the engine for
-# the device, so this needs nothing beyond a signing identity.
 ios:
 	xcodebuild -project apps/Calcium.xcodeproj -scheme Calcium \
-	  -destination "generic/platform=iOS" -allowProvisioningUpdates \
-	  -derivedDataPath apps/build -quiet build
+	  -destination "generic/platform=iOS" -allowProvisioningUpdates -quiet build
 	@echo "==> Built for iOS device"
 
 web:
@@ -65,4 +69,3 @@ run-gtk: gtk
 clean:
 	cargo clean
 	cd apps/gtk && cargo clean
-	rm -rf apps/build
