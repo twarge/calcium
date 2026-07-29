@@ -2,8 +2,6 @@ name: App Store
 
 # Archives and uploads both apps to App Store Connect (TestFlight / review).
 # Run it manually from the Actions tab, or push a version tag like v1.2.
-# Follows the pattern proven in DeXeF, plus the Rust cross-target the
-# engine's pre-build phase needs.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   ASC_KEY_ID     App Store Connect API key ID
@@ -19,6 +17,11 @@ name: App Store
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version to build (defaults to the project's MARKETING_VERSION)"
+        required: false
+        type: string
   push:
     tags: ["v*"]
 
@@ -36,14 +39,21 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      # One platform at a time: parallel legs share the ASC key and race
+      # Apple's provisioning and upload services, which intermittently fails
+      # the slower leg with misleading errors ("Cloud signing permission
+      # error", "Account credentials have expired").
+      max-parallel: 1
       matrix:
         include:
           - name: iOS
             destination: generic/platform=iOS
             archive: build/Calcium-iOS.xcarchive
+            asc_platform: IOS
           - name: macOS
             destination: generic/platform=macOS
             archive: build/Calcium-macOS.xcarchive
+            asc_platform: MAC_OS
     steps:
       - uses: actions/checkout@v5
 
@@ -57,9 +67,43 @@ jobs:
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           mkdir -p ~/private_keys
           printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          # Shape checks only — never prints secret values.
+          [ "${#ASC_KEY_ID}" -eq 10 ] || { echo "::error::ASC_KEY_ID length is ${#ASC_KEY_ID}, expected 10"; exit 1; }
+          [ "${#ASC_ISSUER_ID}" -eq 36 ] || { echo "::error::ASC_ISSUER_ID length is ${#ASC_ISSUER_ID}, expected a 36-char UUID"; exit 1; }
+          grep -q "BEGIN PRIVATE KEY" ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 || { echo "::error::ASC_KEY_P8 does not look like a raw .p8 (missing BEGIN PRIVATE KEY — paste the file contents, not base64)"; exit 1; }
+
+      - name: Determine marketing version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION=$(sed -n 's/.*MARKETING_VERSION = \([0-9.][0-9.]*\);.*/\1/p' apps/Calcium.xcodeproj/project.pbxproj | head -1)
+          fi
+          [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || { echo "::error::Resolved version '$VERSION' is not a plain version number (tag like v1.2)"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building marketing version $VERSION"
+
+      # Fails fast with a readable message when App Store Connect would reject
+      # the upload because this version's train is already approved and closed.
+      - name: Check the version train is open
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_BUNDLE_ID: com.twarge.calcium
+          ASC_PLATFORM: ${{ matrix.asc_platform }}
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ASC_KEY_PATH=~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
+            swift Scripts/check-appstore-version.swift
 
       - name: Write export options
         run: |
@@ -93,6 +137,7 @@ jobs:
             -configuration Release \
             -destination '${{ matrix.destination }}' \
             -archivePath '${{ matrix.archive }}' \
+            MARKETING_VERSION='${{ steps.version.outputs.version }}' \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
