@@ -53,16 +53,12 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showingPreferences) {
-                NavigationStack {
-                    PreferencesView()
-                        .navigationTitle("Settings")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showingPreferences = false }
-                            }
-                        }
-                }
+                // A plain detented sheet: the grabber and a downward flick
+                // (or a tap outside, on iPad) dismiss it — no chrome, no
+                // buttons, the sections speak for themselves.
+                PreferencesView()
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
     }
     #endif
