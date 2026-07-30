@@ -4,12 +4,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-# Publishable later; its path dependency needs a version once calcium-core settles.
-publish = false
+repository.workspace = true
+description = "The Calcium CLI: run and check Markdown calculation documents (installs the `calcium` binary)"
+keywords = ["calculator", "units", "markdown", "math"]
+categories = ["command-line-utilities", "mathematics"]
 
 [[bin]]
 name = "calcium"
 path = "src/main.rs"
 
 [dependencies]
-calcium-core = { path = "../calcium-core" }
+calcium-core = { path = "../calcium-core", version = "0.1.0" }
