@@ -1,0 +1,79 @@
+# Calcium, showing off
+
+Every answer below was computed by the engine. Edit anything;
+everything follows.
+
+## Units nobody asked for
+
+The classic system administrator's velocity — one attoparsec per
+microfortnight is almost exactly an inch per second:
+
+    1 attoparsec/microfortnight in inches/s => 1.0043 inches/s
+
+The speed of light, in MIT bridge lengths per nuclear-physics instant:
+
+    speed of light in smoots/shake => 1.7616 smoots/shake
+
+Swatch Internet Time was right all along — the day divides perfectly:
+
+    1 day in beats => 1,000 beats
+
+Grandpa Simpson's car gets forty miles to the gallon, which is to say:
+
+    40 miles/gallon in furlongs/hogshead => 20,160 furlongs/hogshead
+
+Noah's ark, for the modern shipyard:
+
+    ark length = 300 cubits in m => 137.16 m
+
+## Units you define yourself
+
+If Helen's was the face that launched a thousand ships:
+
+    Helen = 1000 ships
+    achaean fleet = 1186 ships
+    achaean fleet in Helen => 1.186 Helen
+
+Any two things with the same dimension convert:
+
+    giraffes = 900 kg
+    blue whale = 150000 kg
+    1 blue whale in giraffes => 166.6667 giraffes
+
+## Pizza economics
+
+Is the big one worth it? Square centimetres per dollar:
+
+    value(d, price) = pi * (d/2)^2 / price
+    value(18 inch, 24 USD) in cm^2/USD => 68.4055 cm^2/$
+    value(12 inch, 14 USD) in cm^2/USD => 52.1185 cm^2/$
+
+The big one. It is always the big one.
+
+## It solves equations, with units on
+
+Drop a penny from the Eiffel Tower:
+
+    g = 9.81 m/s^2
+    330 m = 1/2 * g * fall time^2
+    fall time => 8.2023 s
+
+## Llama party
+
+    party +=
+        cake = 40 USD
+        balloons = 12 USD
+        llama rental = 350 USD
+    party => $402
+
+    tip = 18% * party => $72.36
+    total = party + tip => $474.36
+
+## And the rest
+
+    factorial(n) = if n <= 1 then 1 else n * factorial(n - 1)
+    factorial(13) => 6,227,020,800
+
+    (2 + 3i) * (2 - 3i) => 13
+
+    350 degF in degC => 176.6667 degC
