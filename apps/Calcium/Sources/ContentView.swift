@@ -57,6 +57,10 @@ struct ContentView: View {
                 // (or a tap outside, on iPad) dismiss it — no chrome, no
                 // buttons, the sections speak for themselves.
                 PreferencesView()
+                    // Chrome-free sheets inset nothing themselves: without
+                    // this the first section rides up under the grabber and
+                    // the top row clips against the sheet's edge.
+                    .contentMargins(.top, 18, for: .scrollContent)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
