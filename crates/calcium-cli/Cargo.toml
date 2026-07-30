@@ -1,6 +1,8 @@
 [package]
 name = "calcium-cli"
-version.workspace = true
+# Ahead of the workspace: 0.1.1 added the README, and registry versions
+# are immutable.
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -8,6 +10,7 @@ repository.workspace = true
 description = "The Calcium CLI: run and check Markdown calculation documents (installs the `calcium` binary)"
 keywords = ["calculator", "units", "markdown", "math"]
 categories = ["command-line-utilities", "mathematics"]
+readme = "README.md"
 
 [[bin]]
 name = "calcium"
