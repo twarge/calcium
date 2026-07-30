@@ -63,6 +63,11 @@ struct ContentView: View {
                     .contentMargins(.top, 18, for: .scrollContent)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+                    // Opaque, deliberately: the default sheet material is
+                    // translucent, so at the medium detent the dimmed
+                    // document bled through and the sheet read darker than
+                    // it did dragged up to full height.
+                    .presentationBackground(Color(uiColor: .systemGroupedBackground))
             }
     }
     #endif
