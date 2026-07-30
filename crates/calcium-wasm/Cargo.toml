@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# The wasm cdylib ships with the web demo, not the registry.
+publish = false
 description = "WebAssembly build of the Calcium C ABI"
 
 [lib]

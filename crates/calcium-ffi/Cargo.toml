@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# The C ABI ships inside the apps, not the registry.
+publish = false
 description = "C ABI for the Calcium engine"
 
 [lib]

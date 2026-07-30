@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+# Publishable later; its path dependency needs a version once calcium-core settles.
+publish = false
 
 [[bin]]
 name = "calcium"

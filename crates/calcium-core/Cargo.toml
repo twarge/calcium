@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Symbolic calculation engine for Calcium documents"
+repository.workspace = true
+description = "The Calcium engine: Markdown documents where lines compute — units as algebra, exact rationals, symbolic solving"
+keywords = ["calculator", "units", "markdown", "math"]
+categories = ["mathematics", "science", "text-processing"]
+readme = "README.md"
 
 [dependencies]
 num-bigint.workspace = true

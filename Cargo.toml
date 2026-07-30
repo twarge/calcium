@@ -9,6 +9,10 @@ name = "calcium"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# The thin root exists for the corpus test; the name is also taken on
+# crates.io by an unrelated 2017 crate. The engine publishes as
+# calcium-core.
+publish = false
 
 [lib]
 path = "src/lib.rs"
@@ -21,6 +25,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "Apache-2.0"
+repository = "https://github.com/twarge/calcium"
 
 # Dependencies compiled optimised even in a debug build. The engine leans on
 # num-bigint and num-rational for every arithmetic step, and unoptimised they
