@@ -33,13 +33,37 @@ struct ContentView: View {
             }
     }
     #else
+    @State private var showingPreferences = false
+
     var body: some View {
-        // No `.ignoresSafeArea(.keyboard)` here, deliberately: SwiftUI's
-        // keyboard avoidance is what constrains the editor to end above the
-        // keyboard and its keypad rows. A raw UITextView does no keyboard
-        // avoidance of its own, so opting out left the text running on
-        // beneath them.
+        // The text view manages its own keyboard insets — see the keyboard
+        // observer in EditorViewIOS. SwiftUI's own avoidance resized the
+        // representable instead and, on iPadOS, left it short of the window
+        // after the keyboard dismissed.
         EditorViewIOS(text: $text, fileURL: fileURL)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingPreferences = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
+            .sheet(isPresented: $showingPreferences) {
+                NavigationStack {
+                    PreferencesView()
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingPreferences = false }
+                            }
+                        }
+                }
+            }
     }
     #endif
 }

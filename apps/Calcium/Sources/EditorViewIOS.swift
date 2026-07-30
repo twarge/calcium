@@ -50,6 +50,27 @@ struct EditorViewIOS: UIViewRepresentable {
         textView.text = text
         context.coordinator.fileURL = fileURL
         context.coordinator.restoreViewState(in: textView)
+        // The view fills the window and insets itself under the keyboard —
+        // UIKit's own mechanism, instead of SwiftUI resizing the frame,
+        // which left the editor short of the window on iPadOS after the
+        // keyboard dismissed. The keyboard frame arrives in screen
+        // coordinates on the main thread; the box re-enters the actor.
+        let box = MainActorWeak(textView)
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil, queue: .main
+        ) { note in
+            let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
+                as? NSValue)?.cgRectValue
+            MainActor.assumeIsolated {
+                guard let textView = box.value, let end,
+                      textView.window != nil else { return }
+                let keyboard = textView.convert(end, from: nil)
+                let overlap = max(0, textView.bounds.maxY - keyboard.minY)
+                textView.contentInset.bottom = overlap
+                textView.verticalScrollIndicatorInsets.bottom = overlap
+            }
+        }
         context.coordinator.installCommands(for: textView)
         let coordinator = context.coordinator
         Task { coordinator.refresh(textView) }
@@ -563,8 +584,14 @@ struct EditorViewIOS: UIViewRepresentable {
 
         func installCommands(for textView: UITextView) {
             CommandBus.shared.register { [weak self, weak textView] command in
-                guard let self, let textView, textView.isFirstResponder
-                else { return false }
+                guard let self, let textView else { return false }
+                if case .preferencesChanged = command {
+                    // Applies regardless of focus: the settings sheet has
+                    // the editor resigned while it is up.
+                    refresh(textView)
+                    return false
+                }
+                guard textView.isFirstResponder else { return false }
                 switch command {
                 case .toggleComment:
                     self.transformSelectedLines(textView) { self.toggledComment($0) }
@@ -582,7 +609,7 @@ struct EditorViewIOS: UIViewRepresentable {
                         return removed > 0 ? trimmed : nil
                     }
                 case .jump, .preferencesChanged:
-                    return false
+                    return false // jump is macOS-only; preferences handled above
                 }
                 return true
             }
