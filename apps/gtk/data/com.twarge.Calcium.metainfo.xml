@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.twarge.Calcium</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Calcium</name>
+  <summary>A text editor that loves math</summary>
+  <description>
+    <p>
+      Markdown documents in which any line can be a calculation. Write
+      2 + 2 =&gt; and the answer appears after the arrow; change a
+      definition and every dependent answer follows. Units are algebra
+      (88 mph in km/hour, or furlongs per fortnight), arithmetic is
+      exact, and equations solve symbolically — with units on.
+    </p>
+    <p>
+      Documents are plain Markdown: mail them, commit them to git, open
+      them in any editor. The answers travel inside the text.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.twarge.Calcium.desktop</launchable>
+  <url type="homepage">https://twarge.com/calcium/</url>
+  <url type="vcs-browser">https://github.com/twarge/calcium</url>
+  <url type="bugtracker">https://github.com/twarge/calcium/issues</url>
+  <developer id="com.twarge">
+    <name>Twarge</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-29"/>
+  </releases>
+</component>

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Calcium
+Comment=A text editor that loves math
+Exec=calcium-gtk %f
+Icon=com.twarge.Calcium
+Terminal=false
+Type=Application
+Categories=Utility;Calculator;TextEditor;GTK;
+MimeType=text/plain;
+Keywords=calculator;units;markdown;math;notebook;

@@ -41,3 +41,16 @@ only.
 Completions, value scrubbing, prose spelling, per-document view state,
 pinch zoom, and the distraction-free chrome. The evaluation is always
 inline — the measured fallback the Apple editors use is not ported.
+
+## Flatpak
+
+`com.twarge.Calcium.json` packages the editor for Flathub; `data/` holds
+the desktop file, AppStream metainfo, and icon. Publishing, from Linux:
+
+1. Push the repository and tag a release (the manifest names `v0.1.0`).
+2. `python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json`
+   (from flathub/flatpak-builder-tools) so the sandboxed build works
+   offline.
+3. Test: `flatpak-builder --user --install build-dir com.twarge.Calcium.json`
+4. Submit: fork `flathub/flathub`, add the manifest plus
+   `cargo-sources.json` on a new branch, open the PR.

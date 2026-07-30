@@ -24,7 +24,7 @@ use std::rc::Rc;
 
 fn main() -> glib::ExitCode {
     let app = gtk::Application::builder()
-        .application_id("com.twarge.calcium")
+        .application_id("com.twarge.Calcium")
         .build();
     app.connect_activate(build_window);
     app.run()
