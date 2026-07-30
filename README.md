@@ -39,6 +39,7 @@ tests/golden.rs         runs the corpus as a regression test
 | `corpus/worked.calcium` | 33 — realistic documents end to end |
 
 ```bash
+cargo install calcium-cli                             # the `calcium` binary
 cargo test                                            # unit tests + the corpus
 cargo run -p calcium-cli -- check corpus/*.calcium    # per-line report
 cargo run -p calcium-cli -- run corpus/tour.calcium   # rewrite a document
