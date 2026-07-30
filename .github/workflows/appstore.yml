@@ -62,7 +62,7 @@ jobs:
             archive: build/Calcium-macOS.xcarchive
             asc_platform: MAC_OS
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The project's pre-build phase cross-compiles the engine for the
       # device; the runner's rustup needs the target installed.
