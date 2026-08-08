@@ -38,6 +38,8 @@ struct EditorViewIOS: UIViewRepresentable {
         textView.smartInsertDeleteType = .no
         textView.spellCheckingType = .no
         textView.keyboardType = .asciiCapable
+        // The system find panel (with replace; the view is editable).
+        textView.isFindInteractionEnabled = true
 
         // Links open on tap; the recognizer's delegate admits only touches
         // that land on one, so ordinary taps place the caret untouched.

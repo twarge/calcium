@@ -60,6 +60,10 @@ private struct FindCommands: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The Services menu: select Calcium text in any app, Compute
+        // Calcium, and the selection comes back with its answers written
+        // in — doc::rewrite as a system verb.
+        NSApp.servicesProvider = ComputeService()
         AppDelegate.removeFormatMenu()
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main
@@ -83,6 +87,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Answers `Compute Calcium` from the Services menu.
+final class ComputeService: NSObject {
+    @objc func computeCalcium(
+        _ pasteboard: NSPasteboard, userData: String?,
+        error: AutoreleasingUnsafeMutablePointer<NSString>
+    ) {
+        guard let text = pasteboard.string(forType: .string) else {
+            error.pointee = "No text in the selection." as NSString
+            return
+        }
+        pasteboard.clearContents()
+        pasteboard.setString(Engine.materializingAnswers(in: text), forType: .string)
+    }
+}
 #endif
 
 @main
