@@ -7,22 +7,53 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2B728BF4262C44569FEE931B /* PreviewViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25C7285DC6647A1A92070FD /* PreviewViewController.swift */; };
 		2DAB0A9A86263CBD8F8DE5BF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E562C67F8599B8B0DAF92F4 /* ContentView.swift */; };
+		3B0CD342930241B78CF539A3 /* CalciumQuickLook.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 2D99973CB3874CDE886A4457 /* CalciumQuickLook.appex */; platformFilters = (macos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		49526864582C22E531AD4D2E /* CompletionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E3AF071BA00D2D21BF09FB /* CompletionPanel.swift */; };
 		5BF9E15CDBA655250525559D /* CalciumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDE1046FAE26031488AB8AA /* CalciumApp.swift */; };
 		5FADEA12F88CCAD3AEA88AE3 /* Autocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6258CFE74DF89A94F6A15 /* Autocomplete.swift */; };
+		72F6D80C124B4021BD477B5B /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = A3E0F628FB14F0B714D42286 /* Fonts */; };
 		739CC4829ABFAF7DF9D1879D /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C2B3871A8362E5208C647E /* WindowChrome.swift */; };
 		752070167198760C3F55E6C9 /* CalciumDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B7793ED420EEAAEEA4E8EC /* CalciumDocument.swift */; };
 		7B41F1E3E1B2C1075559FC6C /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9389DBEA4BA74E1CF10AC29E /* Engine.swift */; };
+		7BEA299FF13842AE8D7051BE /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9389DBEA4BA74E1CF10AC29E /* Engine.swift */; };
 		821FE479F5A096B02EF70574 /* DocumentViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A774C2CD8B95150858C4BB77 /* DocumentViewState.swift */; };
+		938728455A234C56BABD7990 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
 		9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */; };
 		B4584E42672F07800FBDE311 /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CF4355AF72CBB535F0DC31 /* EditorView.swift */; };
 		C1535F837EE16F3E50AA9E4C /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = A3E0F628FB14F0B714D42286 /* Fonts */; };
+		C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
 		CA83749043AAEF6606B54FA3 /* KeypadAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */; };
 		E979B1CD599F11951850E890 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 03D9CDCB7D0120118A2354EF /* Assets.xcassets */; };
 		EAD823A0A796C1E35685C7E8 /* EditorCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82783BFED8025A82AA2BC0F /* EditorCommands.swift */; };
 		F7C18F1CA0E0533C5889536D /* EditorViewIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C301BA0702E182F43ACAEF1 /* EditorViewIOS.swift */; };
+		FC8272EABB3A433F8D16CFCC /* PreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B8C5BB423F4E0AB41BBBF9 /* PreviewRenderer.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6F92317B5CCD4F649EF70F14 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6D41AD6073157FD681E33924 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 579BEE3869E64C32A91B04A9;
+			remoteInfo = CalciumQuickLook;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B3B5AA21BAA746EFABAC46AF /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3B0CD342930241B78CF539A3 /* CalciumQuickLook.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		03D9CDCB7D0120118A2354EF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -30,17 +61,23 @@
 		09B7793ED420EEAAEEA4E8EC /* CalciumDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalciumDocument.swift; sourceTree = "<group>"; };
 		18E3AF071BA00D2D21BF09FB /* CompletionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPanel.swift; sourceTree = "<group>"; };
 		1C301BA0702E182F43ACAEF1 /* EditorViewIOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViewIOS.swift; sourceTree = "<group>"; };
+		2D99973CB3874CDE886A4457 /* CalciumQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CalciumQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C07A28F85489EC88C1BACF0 /* Calcium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Calcium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		42B8C5BB423F4E0AB41BBBF9 /* PreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRenderer.swift; sourceTree = "<group>"; };
 		4E562C67F8599B8B0DAF92F4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		5638946C47224D3FAC8F8864 /* CalciumQuickLook.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CalciumQuickLook.entitlements; sourceTree = "<group>"; };
 		5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		9389DBEA4BA74E1CF10AC29E /* Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine.swift; sourceTree = "<group>"; };
 		A3E0F628FB14F0B714D42286 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Calcium/Resources/Fonts; sourceTree = SOURCE_ROOT; };
+		A3EB496566BB4AE3B94C9648 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeypadAccessory.swift; sourceTree = "<group>"; };
 		A774C2CD8B95150858C4BB77 /* DocumentViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewState.swift; sourceTree = "<group>"; };
+		B25C7285DC6647A1A92070FD /* PreviewViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViewController.swift; sourceTree = "<group>"; };
 		B82783BFED8025A82AA2BC0F /* EditorCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorCommands.swift; sourceTree = "<group>"; };
 		D1C2B3871A8362E5208C647E /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		DDDE1046FAE26031488AB8AA /* CalciumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalciumApp.swift; sourceTree = "<group>"; };
 		E6CF4355AF72CBB535F0DC31 /* EditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorView.swift; sourceTree = "<group>"; };
+		EA16E2D9294F46398448423F /* Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Style.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -56,8 +93,20 @@
 			isa = PBXGroup;
 			children = (
 				3C07A28F85489EC88C1BACF0 /* Calcium.app */,
+				2D99973CB3874CDE886A4457 /* CalciumQuickLook.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8A46CBF5A9554588A9E12F56 /* CalciumQuickLook */ = {
+			isa = PBXGroup;
+			children = (
+				5638946C47224D3FAC8F8864 /* CalciumQuickLook.entitlements */,
+				A3EB496566BB4AE3B94C9648 /* Info.plist */,
+				42B8C5BB423F4E0AB41BBBF9 /* PreviewRenderer.swift */,
+				B25C7285DC6647A1A92070FD /* PreviewViewController.swift */,
+			);
+			path = CalciumQuickLook;
 			sourceTree = "<group>";
 		};
 		AE433FA74CB409BD298E4B04 /* Sources */ = {
@@ -75,6 +124,7 @@
 				9389DBEA4BA74E1CF10AC29E /* Engine.swift */,
 				A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */,
 				5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */,
+				EA16E2D9294F46398448423F /* Style.swift */,
 				D1C2B3871A8362E5208C647E /* WindowChrome.swift */,
 			);
 			path = Sources;
@@ -94,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				D25E76F11804122F8DEED954 /* Calcium */,
+				8A46CBF5A9554588A9E12F56 /* CalciumQuickLook */,
 				83D16CE61D1389D99EDC2508 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -101,6 +152,25 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		579BEE3869E64C32A91B04A9 /* CalciumQuickLook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F84D338E004B407FB8E05616 /* Build configuration list for PBXNativeTarget "CalciumQuickLook" */;
+			buildPhases = (
+				0BDF6436E8CE41DAA4D51459 /* Build Rust engine */,
+				6E3EE617A8C042BF8D9BA741 /* Sources */,
+				70C9C854A90E40679266FE1C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CalciumQuickLook;
+			packageProductDependencies = (
+			);
+			productName = CalciumQuickLook;
+			productReference = 2D99973CB3874CDE886A4457 /* CalciumQuickLook.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		F367DFA629B5CA102028F6B8 /* Calcium */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 04D97A61E1412C6FA439846E /* Build configuration list for PBXNativeTarget "Calcium" */;
@@ -108,10 +178,12 @@
 				8CAB8273472AACAFB14ED8C2 /* Build Rust engine */,
 				986988B1090B2B6BA803D6F3 /* Sources */,
 				24AE48303A8DC6273AE1BAF9 /* Resources */,
+				B3B5AA21BAA746EFABAC46AF /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EBD1C3B1EA134775A13D8341 /* PBXTargetDependency */,
 			);
 			name = Calcium;
 			packageProductDependencies = (
@@ -129,6 +201,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					579BEE3869E64C32A91B04A9 = {
+						DevelopmentTeam = 257KW9ZJFP;
+						ProvisioningStyle = Automatic;
+					};
 					F367DFA629B5CA102028F6B8 = {
 						DevelopmentTeam = 257KW9ZJFP;
 						ProvisioningStyle = Automatic;
@@ -150,6 +226,7 @@
 			projectRoot = "";
 			targets = (
 				F367DFA629B5CA102028F6B8 /* Calcium */,
+				579BEE3869E64C32A91B04A9 /* CalciumQuickLook */,
 			);
 		};
 /* End PBXProject section */
@@ -164,9 +241,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		70C9C854A90E40679266FE1C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72F6D80C124B4021BD477B5B /* Fonts in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0BDF6436E8CE41DAA4D51459 /* Build Rust engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust engine";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:$PATH\"\ncase \"$PLATFORM_NAME\" in\n  iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;\n  iphonesimulator)\n    # Both simulator architectures, folded into one library — the\n    # generic destination links x86_64 as well as arm64.\n    cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi\n    cargo build --release --target x86_64-apple-ios -p calcium-ffi\n    mkdir -p target/universal-ios-sim/release\n    lipo -create \\\n      target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \\\n      target/x86_64-apple-ios/release/libcalcium_ffi.a \\\n      -output target/universal-ios-sim/release/libcalcium_ffi.a\n    ;;\n  *)               cargo build --release -p calcium-ffi ;;\nesac\n";
+		};
 		8CAB8273472AACAFB14ED8C2 /* Build Rust engine */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -189,6 +293,17 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		6E3EE617A8C042BF8D9BA741 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BEA299FF13842AE8D7051BE /* Engine.swift in Sources */,
+				FC8272EABB3A433F8D16CFCC /* PreviewRenderer.swift in Sources */,
+				2B728BF4262C44569FEE931B /* PreviewViewController.swift in Sources */,
+				938728455A234C56BABD7990 /* Style.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		986988B1090B2B6BA803D6F3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -205,13 +320,103 @@
 				7B41F1E3E1B2C1075559FC6C /* Engine.swift in Sources */,
 				CA83749043AAEF6606B54FA3 /* KeypadAccessory.swift in Sources */,
 				9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */,
+				C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */,
 				739CC4829ABFAF7DF9D1879D /* WindowChrome.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		EBD1C3B1EA134775A13D8341 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				macos,
+			);
+			target = 579BEE3869E64C32A91B04A9 /* CalciumQuickLook */;
+			targetProxy = 6F92317B5CCD4F649EF70F14 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		062308D74CCC42DDA538D81C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"ARCHS[sdk=macosx*]" = arm64;
+				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = CalciumQuickLook/CalciumQuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 257KW9ZJFP;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
+				INFOPLIST_FILE = CalciumQuickLook/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi";
+				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium.quicklook;
+				PRODUCT_NAME = CalciumQuickLook;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		0E8B8484D2B044E9929F98B9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"ARCHS[sdk=macosx*]" = arm64;
+				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = CalciumQuickLook/CalciumQuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 257KW9ZJFP;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
+				INFOPLIST_FILE = CalciumQuickLook/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi";
+				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium.quicklook;
+				PRODUCT_NAME = CalciumQuickLook;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		5C450C5E41A9D929AC6F02CC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -284,6 +489,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Calcium/CalciumIOS.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Calcium/Calcium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -390,6 +596,7 @@
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Calcium/CalciumIOS.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Calcium/Calcium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -448,6 +655,15 @@
 			buildConfigurations = (
 				5C450C5E41A9D929AC6F02CC /* Debug */,
 				D2567DCBA6DF94B3E4CBA9E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F84D338E004B407FB8E05616 /* Build configuration list for PBXNativeTarget "CalciumQuickLook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				062308D74CCC42DDA538D81C /* Debug */,
+				0E8B8484D2B044E9929F98B9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

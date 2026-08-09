@@ -2,16 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The App Sandbox, with the one grant a document editor needs: the
-	     files the user opens and saves. Documents arrive through the open
-	     panel and DocumentGroup, which confer security-scoped access; the
-	     per-document view state rides as an xattr on those same files. -->
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
 	<!-- iCloud Drive documents: the ubiquity container that DocumentGroup
-	     reads and writes when the user keeps files in iCloud. -->
+	     and the document browser read and write. iOS needs no sandbox
+	     grants beyond this — the system document picker confers access. -->
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.com.twarge.calcium</string>

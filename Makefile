@@ -28,12 +28,13 @@ test:
 # so a make build and a ⌘B are the same build.
 mac:
 	xcodebuild -project apps/Calcium.xcodeproj -scheme Calcium \
-	  -destination "platform=macOS" -quiet build
+	  -destination "platform=macOS" -allowProvisioningUpdates -quiet build
 	@echo "==> Built for macOS"
 
 mac-release:
 	xcodebuild -project apps/Calcium.xcodeproj -scheme Calcium \
-	  -destination "platform=macOS" -configuration Release -quiet build
+	  -destination "platform=macOS" -configuration Release \
+	  -allowProvisioningUpdates -quiet build
 	@echo "==> Built for macOS (Release)"
 
 ios:
