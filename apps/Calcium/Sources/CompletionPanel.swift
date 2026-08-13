@@ -89,7 +89,6 @@ final class CompletionPanel: NSObject, NSTableViewDataSource, NSTableViewDelegat
         topInset.constant = inset
         bottomInset.constant = -inset
         table.reloadData()
-        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
 
         let widest = items.map { rowText(for: $0).size().width }.max() ?? 0
         var width = ceil(widest) + pad * 2
@@ -124,6 +123,18 @@ final class CompletionPanel: NSObject, NSTableViewDataSource, NSTableViewDelegat
     func move(_ delta: Int) {
         guard !items.isEmpty else { return }
         let row = min(max(0, table.selectedRow + delta), items.count - 1)
+        table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        table.scrollRowToVisible(row)
+    }
+
+    /// Tab's motion. Nothing is lit when the menu opens — the author may
+    /// simply be typing a word the menu happens to match — so the first
+    /// press lights the first row, and each further press steps down,
+    /// wrapping past the end. `selectedRow` is −1 while nothing is lit,
+    /// which the arithmetic folds into the first step.
+    func cycle() {
+        guard !items.isEmpty else { return }
+        let row = (table.selectedRow + 1) % items.count
         table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         table.scrollRowToVisible(row)
     }

@@ -470,12 +470,18 @@ struct EditorView: NSViewRepresentable {
                 case #selector(NSResponder.moveUp(_:)):
                     completionPanel.move(-1)
                     return true
-                case #selector(NSResponder.insertTab(_:)),
-                     #selector(NSResponder.insertNewline(_:)):
+                case #selector(NSResponder.insertTab(_:)):
+                    // Tab never inserts while the menu shows: it lights the
+                    // first row, then cycles. Return accepts what it lit.
+                    completionPanel.cycle()
+                    return true
+                case #selector(NSResponder.insertNewline(_:)):
                     if let pick = completionPanel.current {
                         accept(pick, in: textView)
                         return true
                     }
+                    // Nothing lit: the menu was only an offer. Close it and
+                    // let Return break the line as it normally would.
                     completionPanel.hide()
                 case #selector(NSResponder.cancelOperation(_:)):
                     completionPanel.hide()
