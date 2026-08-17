@@ -22,7 +22,7 @@ A Rust engine with a Swift document app on top. See
 ```
 crates/calcium-core/    the engine — lexer, parser, simplifier, solver, units
 crates/calcium-ffi/     C ABI: three functions over String -> String
-crates/calcium-cli/     `calcium run` / `calcium check`
+crates/calcium-cli/     `calcium run` / `calcium check` / `calcium typst`
 apps/Calcium/           the macOS app
 corpus/                 hand-written test documents
 tests/golden.rs         runs the corpus as a regression test
@@ -30,7 +30,7 @@ tests/golden.rs         runs the corpus as a regression test
 
 ## Status
 
-105 unit tests, plus 261 end-to-end expectations in `corpus/`, all passing.
+126 unit tests, plus 261 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|
@@ -43,11 +43,21 @@ cargo install calcium-cli                             # the `calcium` binary
 cargo test                                            # unit tests + the corpus
 cargo run -p calcium-cli -- check corpus/*.calcium    # per-line report
 cargo run -p calcium-cli -- run corpus/tour.calcium   # rewrite a document
+cargo run -p calcium-cli -- typst doc.calcium         # convert to Typst markup
 ```
 
 Because a document carries its own answers, any document is a test: `check`
 recomputes every `=>` and reports what disagrees. That works on your own files
 too, not just the corpus.
+
+`typst` turns a document into Typst markup: prose stays prose, and every
+calculation becomes a display equation with its freshly computed answer folded
+in. Units typeset through the `fancy-units` package — `42.15 pA/Hz^0.5` — so
+compiling the output needs that package fetched once from the Typst Universe.
+A section headed `Symbols` maps the document's long names to typeset symbols
+through ordinary trailing comments — `operating current  # I` — so the
+section is invisible to evaluation and `check`, and typesets as a notation
+table.
 
 The corpus is written by hand rather than generated from this engine — a corpus
 blessed from its own output would pass by construction and prove nothing.

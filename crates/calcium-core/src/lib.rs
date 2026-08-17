@@ -17,3 +17,4 @@ pub mod num;
 pub mod parser;
 pub mod simplify;
 pub mod solve;
+pub mod typst;

@@ -3,6 +3,7 @@
 //!   calcium run   <file.calcium>   rewrite the document with fresh answers
 //!   calcium check <file.calcium>   compare fresh answers against the ones
 //!                                already in the file, and report a pass rate
+//!   calcium typst <file.calcium>   convert the document to Typst markup
 
 use calcium_core::check::{check_source, Report};
 use std::process::ExitCode;
@@ -13,8 +14,9 @@ fn main() -> ExitCode {
         Some("run") if args.len() >= 2 => run(&args[1..]),
         Some("check") if args.len() >= 2 => check(&args[1..]),
         Some("kinds") if args.len() >= 2 => kinds(&args[1..]),
+        Some("typst") if args.len() >= 2 => typst(&args[1..]),
         _ => {
-            eprintln!("usage: calcium <run|check|kinds> <file.calcium>...");
+            eprintln!("usage: calcium <run|check|kinds|typst> <file.calcium>...");
             ExitCode::from(2)
         }
     }
@@ -24,6 +26,21 @@ fn run(paths: &[String]) -> ExitCode {
     for path in paths {
         match std::fs::read_to_string(path) {
             Ok(source) => println!("{}", calcium_core::doc::rewrite(&source)),
+            Err(err) => {
+                eprintln!("{path}: {err}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Converts documents to Typst markup on stdout: answers recomputed fresh,
+/// long names swapped for the symbols a `Symbols` section declares.
+fn typst(paths: &[String]) -> ExitCode {
+    for path in paths {
+        match std::fs::read_to_string(path) {
+            Ok(source) => println!("{}", calcium_core::typst::to_typst(&source)),
             Err(err) => {
                 eprintln!("{path}: {err}");
                 return ExitCode::FAILURE;
