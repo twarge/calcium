@@ -59,6 +59,12 @@ struct CalciumDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Self.fileContents(for: text))
+    }
+
+    /// The exact bytes a save writes. Shared with the iOS share sheet, so a
+    /// shared document can never differ from a saved one.
+    static func fileContents(for text: String) -> Data {
         // The buffer already carries fresh answers; recomputing here costs
         // little and guarantees the file is right even if a pass was still
         // pending when the save arrived.
@@ -68,7 +74,7 @@ struct CalciumDocument: FileDocument {
         if !onDisk.isEmpty && !onDisk.hasSuffix("\n") {
             onDisk.append("\n")
         }
-        return FileWrapper(regularFileWithContents: Data(onDisk.utf8))
+        return Data(onDisk.utf8)
     }
 
     static let starter = """

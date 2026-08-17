@@ -1,4 +1,6 @@
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Binding var text: String
@@ -43,6 +45,15 @@ struct ContentView: View {
         EditorViewIOS(text: $text, fileURL: fileURL)
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let export = DocumentExport(text: text, fileURL: fileURL)
+                    ShareLink(
+                        item: export,
+                        preview: SharePreview(
+                            export.filename, icon: Image(systemName: "doc.text"))
+                    )
+                    .accessibilityLabel("Share Document")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingPreferences = true
@@ -114,6 +125,52 @@ private struct OutlineMenu: View {
             Label("Outline", systemImage: "list.bullet")
         }
         .help("Jump to a heading")
+    }
+}
+#endif
+
+#if os(iOS)
+/// The document as the share sheet offers it: the bytes a save would write —
+/// produced fresh from the buffer, never a stale on-disk copy — under the
+/// document's real filename.
+///
+/// Encoding is deferred: constructing this is a value copy, and the bytes are
+/// only produced when a share target actually asks.
+private struct DocumentExport: Transferable {
+    var text: String
+    var fileURL: URL?
+
+    var filename: String {
+        fileURL?.lastPathComponent ?? "Untitled.calcium"
+    }
+
+    func data() -> Data {
+        CalciumDocument.fileContents(for: text)
+    }
+
+    /// The file first, so receivers that take documents get one; plain text
+    /// second, for targets like Messages — the format is readable Markdown
+    /// either way.
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .calciumDocument) {
+            (export: DocumentExport) async throws -> SentTransferredFile in
+            SentTransferredFile(try export.writeTemporary(), allowAccessingOriginalFile: false)
+        }
+        ProxyRepresentation { (export: DocumentExport) -> String in
+            String(decoding: export.data(), as: UTF8.self)
+        }
+    }
+
+    /// File transfers hand over a URL, so the bytes go through a uniquely-named
+    /// temporary directory — which is also what lets the receiver see the real
+    /// filename.
+    private func writeTemporary() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(filename)
+        try data().write(to: url)
+        return url
     }
 }
 #endif
