@@ -10,6 +10,10 @@ enum EditorCommand {
     case jump(line: Int)
     /// Preferences changed; restyle open documents.
     case preferencesChanged
+    /// File > Export to Typst…, macOS only.
+    case exportTypst
+    /// File > Typeset PDF, macOS only.
+    case typesetPDF
 }
 
 @MainActor

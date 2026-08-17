@@ -707,6 +707,13 @@ struct EditorView: NSViewRepresentable {
                     }
                 case .jump(let line):
                     self.jump(to: line, in: textView)
+                case .exportTypst:
+                    TypstExport.exportPanel(
+                        source: textView.string, documentURL: self.fileURL,
+                        window: textView.window)
+                case .typesetPDF:
+                    TypstExport.typeset(
+                        source: textView.string, documentURL: self.fileURL)
                 case .preferencesChanged:
                     return false
                 }

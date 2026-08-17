@@ -610,8 +610,8 @@ struct EditorViewIOS: UIViewRepresentable {
                         }
                         return removed > 0 ? trimmed : nil
                     }
-                case .jump, .preferencesChanged:
-                    return false // jump is macOS-only; preferences handled above
+                case .jump, .preferencesChanged, .exportTypst, .typesetPDF:
+                    return false // macOS-only commands; preferences handled above
                 }
                 return true
             }

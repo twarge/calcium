@@ -106,6 +106,12 @@ enum Engine {
         call(calcium_rewrite, source) ?? source
     }
 
+    /// The document as Typst markup — prose, display equations with fresh
+    /// answers, units through fancy-units — ready for `typst compile`.
+    static func typstMarkup(of source: String) -> String {
+        call(calcium_typst, source) ?? source
+    }
+
     /// Bridges one `const char * -> char *` call, taking ownership of the
     /// result and always releasing it.
     private static func call(

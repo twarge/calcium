@@ -98,6 +98,20 @@ pub unsafe extern "C" fn calcium_strip_answers(source: *const c_char) -> *mut c_
     guarded(move || doc::strip_answers(source))
 }
 
+/// The document as Typst markup: prose stays prose, calculations become
+/// display equations with freshly computed answers folded in, and a
+/// `Symbols` section maps names to typeset symbols.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_typst(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || calcium_core::typst::to_typst(source))
+}
+
 /// How each line reads, as JSON:
 /// `[{"kind":"code","comment":12}, {"kind":"prose"}, ...]`, one entry per
 /// source line, `comment` being the UTF-16 offset of a trailing `#`.
@@ -359,6 +373,13 @@ mod tests {
     #[test]
     fn empty_document_is_an_empty_array() {
         assert_eq!(through(calcium_evaluate, ""), "[]");
+    }
+
+    #[test]
+    fn converts_to_typst() {
+        let typst = through(calcium_typst, "    x = 2 + 3 =>\n");
+        assert!(typst.contains("$ x = 2 + 3 = 5 $"), "got {typst}");
+        assert!(typst.contains("fancy-units"), "got {typst}");
     }
 
     #[test]

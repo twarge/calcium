@@ -87,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Answers `Compute Calcium` from the Services menu.
+/// Answers `Compute Calcium` and `Convert Calcium to Typst` from the
+/// Services menu.
 final class ComputeService: NSObject {
     @objc func computeCalcium(
         _ pasteboard: NSPasteboard, userData: String?,
@@ -99,6 +100,18 @@ final class ComputeService: NSObject {
         }
         pasteboard.clearContents()
         pasteboard.setString(Engine.materializingAnswers(in: text), forType: .string)
+    }
+
+    @objc func convertToTypst(
+        _ pasteboard: NSPasteboard, userData: String?,
+        error: AutoreleasingUnsafeMutablePointer<NSString>
+    ) {
+        guard let text = pasteboard.string(forType: .string) else {
+            error.pointee = "No text in the selection." as NSString
+            return
+        }
+        pasteboard.clearContents()
+        pasteboard.setString(Engine.typstMarkup(of: text), forType: .string)
     }
 }
 #endif
@@ -147,6 +160,13 @@ struct CalciumApp: App {
             #if os(macOS)
             CommandGroup(after: .pasteboard) {
                 FindCommands()
+            }
+            // Typst, in the File menu where exporting belongs. Both travel
+            // over the bus because only the key window's editor has the text.
+            CommandGroup(after: .importExport) {
+                Button("Export to Typst…") { CommandBus.shared.send(.exportTypst) }
+                Button("Typeset PDF") { CommandBus.shared.send(.typesetPDF) }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
             }
             #endif
             // Line commands, delivered over the command bus to the key
