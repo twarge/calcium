@@ -193,6 +193,13 @@ variable is exactly correlated with itself.
     speed + drag  => 24 ± 0.58
     speed - speed => 0
 
+`number ± number` fuses into one measured quantity before anything else
+applies, so units and scale factors act on the whole measurement.
+
+    thickness = 2 ± 0.1 mm
+    thickness   => (2 ± 0.1) mm
+    4 * 2 ± 0.1 => 8 ± 0.4
+
 With `@sigfigs`, decimal points measure how much of a literal is real: `2.0`
 has two significant figures, `2.` has one, and a bare `2` is exact.
 

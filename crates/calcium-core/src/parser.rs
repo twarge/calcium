@@ -351,10 +351,6 @@ impl Parser {
             let rhs = self.additive();
             return Expr::Range(Box::new(lhs), Box::new(rhs));
         }
-        if self.eat(&Tok::PlusMinus) {
-            let rhs = self.additive();
-            return Expr::PlusMinus(Box::new(lhs), Box::new(rhs));
-        }
         lhs
     }
 
@@ -396,7 +392,7 @@ impl Parser {
     /// Juxtaposition: `2x`, `100 ft`, `6.25 height`. Binds tighter than `*`
     /// and `/`, which is what makes `2x/3y` mean `(2x)/(3y)`.
     fn factor(&mut self) -> Expr {
-        let mut parts = vec![self.unary()];
+        let mut parts = vec![self.uncertainty()];
         loop {
             // `in` here is either the conversion keyword (stop) or the unit
             // "inches" (keep going).
@@ -411,9 +407,22 @@ impl Parser {
             if !self.starts_primary_now() {
                 break;
             }
-            parts.push(self.unary());
+            parts.push(self.uncertainty());
         }
         Expr::mul(parts)
+    }
+
+    /// `value ± sigma`, binding tighter than multiplication and
+    /// juxtaposition — `4 * 2 ± 0.1` scales the whole measurement and
+    /// `2 ± 0.1 mm` gives the uncertainty the unit — but looser than a
+    /// power, so `x^2 ± 0.1` keeps its square.
+    fn uncertainty(&mut self) -> Expr {
+        let lhs = self.unary();
+        if self.eat(&Tok::PlusMinus) {
+            let rhs = self.unary();
+            return Expr::PlusMinus(Box::new(lhs), Box::new(rhs));
+        }
+        lhs
     }
 
     /// Whether the cursor sits on something that continues a juxtaposition.
@@ -523,6 +532,20 @@ impl Parser {
         match self.peek().clone() {
             Tok::Num(value, radix) => {
                 self.bump();
+                // `number ± number` is a single measured quantity, fused at
+                // the highest precedence: `2 ± 0.1 mm` takes the unit whole,
+                // `4 * 2 ± 0.1` scales the whole measurement, and
+                // `2 ± 0.1 ^ 2` squares it.
+                if self.peek() == &Tok::PlusMinus {
+                    if let Tok::Num(sigma, sigma_radix) = self.peek_at(1).clone() {
+                        self.bump();
+                        self.bump();
+                        return Expr::PlusMinus(
+                            Box::new(Expr::Num(value, radix)),
+                            Box::new(Expr::Num(sigma, sigma_radix)),
+                        );
+                    }
+                }
                 Expr::Num(value, radix)
             }
             Tok::Str(s) => {

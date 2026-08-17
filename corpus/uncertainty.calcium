@@ -67,20 +67,28 @@ error of its argument.
 
     sqrt(a) => 3.162 ± 0.047
 
+`number ± number` fuses into a single measured quantity at the highest
+precedence, so a unit, a scale factor or a power applies to the whole
+measurement — no parentheses required.
+
+    4 * 2 ± 0.1  => 8 ± 0.4
+    2 ± 0.1 mm   => (2 ± 0.1) mm
+    2 ± 0.1 ^ 2  => 4 ± 0.4
+
 Uncertainties ride along with units, through arithmetic and conversions.
 
-    current = (50 ± 1) mA
+    current = 50 ± 1 mA
 
-    current          => 50 mA ± 1 mA
-    current in A     => 0.05 A ± 0.001 A
+    current          => (50 ± 1) mA
+    current in A     => (0.05 ± 0.001) A
     R = 2 kΩ
-    current * R in V => 100 V ± 2 V
+    current * R in V => (100 ± 2) V
 
-    length = (10 ± 0.2) m
-    width  = (5 ± 0.1) m
+    length = 10 ± 0.2 m
+    width  = 5 ± 0.1 m
 
-    length * width       => 50 m^2 ± 1.4 m^2
-    2*(length + width)   => 30 m ± 0.45 m
+    length * width       => (50 ± 1.4) m^2
+    2*(length + width)   => (30 ± 0.45) m
 
 The displayed uncertainty is cut to two significant figures and the centre
 is rounded to match, which is why `70 ± 4.5177` above reads `70 ± 4.5`.

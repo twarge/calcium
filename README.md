@@ -30,14 +30,14 @@ tests/golden.rs         runs the corpus as a regression test
 
 ## Status
 
-146 unit tests, plus 354 end-to-end expectations in `corpus/`, all passing.
+147 unit tests, plus 359 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|
-| `corpus/tour.calcium` | 72 — a readable introduction to the language |
+| `corpus/tour.calcium` | 74 — a readable introduction to the language |
 | `corpus/reference.calcium` | 214 — systematic, one section per feature |
 | `corpus/worked.calcium` | 33 — realistic documents end to end |
-| `corpus/uncertainty.calcium` | 35 — intervals, `±` error propagation, `@sigfigs` |
+| `corpus/uncertainty.calcium` | 38 — intervals, `±` error propagation, `@sigfigs` |
 
 ```bash
 cargo install calcium-cli                             # the `calcium` binary

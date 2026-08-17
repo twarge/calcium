@@ -1309,11 +1309,22 @@ mod tests {
 
     #[test]
     fn uncertainty_carries_units_and_conversions() {
-        let (env, _) = run(&["current = (50 ± 1) mA", "R = 2 kΩ"]);
+        // No parentheses needed: `±` fuses number-to-number before the
+        // unit applies, so the sigma is in millamps too.
+        let (env, _) = run(&["current = 50 ± 1 mA", "R = 2 kΩ"]);
         let u = |src: &str| render(&env.eval_uncertain(&parse_expr(src)).unwrap());
-        assert_eq!(u("current"), "50 mA ± 1 mA");
-        assert_eq!(u("current in A"), "0.05 A ± 0.001 A");
-        assert_eq!(u("current * R in V"), "100 V ± 2 V");
+        assert_eq!(u("current"), "(50 ± 1) mA");
+        assert_eq!(u("current in A"), "(0.05 ± 0.001) A");
+        assert_eq!(u("current * R in V"), "(100 ± 2) V");
+    }
+
+    #[test]
+    fn plus_minus_binds_tighter_than_multiplication_and_powers() {
+        let env = env();
+        let u = |src: &str| render(&env.eval_uncertain(&parse_expr(src)).unwrap());
+        assert_eq!(u("4 * 2 ± 0.1"), "8 ± 0.4");
+        assert_eq!(u("2 ± 0.1 mm"), "(2 ± 0.1) mm");
+        assert_eq!(u("2 ± 0.1 ^ 2"), "4 ± 0.4");
     }
 
     #[test]

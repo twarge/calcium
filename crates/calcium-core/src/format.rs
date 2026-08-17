@@ -97,7 +97,10 @@ fn precedence(expr: &Expr) -> Prec {
         Expr::Cmp(..) | Expr::Relation(..) => Prec::Compare,
         Expr::Logic(LogicOp::Or, ..) | Expr::Bit(BitOp::Or, ..) => Prec::Or,
         Expr::Logic(LogicOp::And, ..) | Expr::Bit(BitOp::And, ..) => Prec::And,
-        Expr::Range(..) | Expr::PlusMinus(..) => Prec::Range,
+        Expr::Range(..) => Prec::Range,
+        // Parsed tightly, printed defensively: parenthesized anywhere inside
+        // a product or power, bare on its own and in sums.
+        Expr::PlusMinus(..) => Prec::Add,
         Expr::Convert(..) => Prec::Convert,
         Expr::If(..) | Expr::Let(..) => Prec::Lowest,
         _ => Prec::Atom,
@@ -213,17 +216,11 @@ fn write_bare(out: &mut String, expr: &Expr, fmt: &NumFormat) {
                 out.push_str(&text);
                 return;
             }
-            // A side that is nothing but a unit still has a magnitude of
-            // one: `50 mA ± 1 mA`, never `± mA`.
-            let side = |out: &mut String, e: &Expr| {
-                if matches!(e, Expr::Var(name) if fmt.units.contains(name)) {
-                    out.push_str("1 ");
-                }
-                write_expr(out, e, Prec::Add, fmt);
-            };
-            side(out, value);
+            // `±` binds tighter than multiplication, so a side that is
+            // itself a product or sum must be parenthesized to read back.
+            write_expr(out, value, Prec::Pow, fmt);
             out.push_str(" ± ");
-            side(out, sigma);
+            write_expr(out, sigma, Prec::Pow, fmt);
         }
         Expr::Abs(inner) => {
             out.push('|');
@@ -311,9 +308,10 @@ fn write_bare(out: &mut String, expr: &Expr, fmt: &NumFormat) {
 }
 
 /// `centre ± sigma` in the physics convention: the uncertainty shown to two
-/// significant figures, the centre rounded to the same decimal place. Only
-/// when both sides are quantities of the same thing — same units, same
-/// symbols — so the rounding is honest; anything stranger prints plainly.
+/// significant figures, the centre rounded to the same decimal place, and a
+/// shared unit written once around the pair — `(50 ± 1) mA`. Only when both
+/// sides are quantities of the same thing — same units, same symbols — so
+/// the rounding is honest; anything stranger prints plainly.
 fn rounded_uncertain(value: &Expr, sigma: &Expr, fmt: &NumFormat) -> Option<String> {
     let (v, v_rest) = crate::simplify::split_coefficient(value);
     let (s, s_rest) = crate::simplify::split_coefficient(sigma);
@@ -328,25 +326,14 @@ fn rounded_uncertain(value: &Expr, sigma: &Expr, fmt: &NumFormat) -> Option<Stri
     let place = width.abs().log10().floor() as i32 - 1;
     let quantum = 10f64.powi(place);
     let round_to = |x: f64| (x / quantum).round() * quantum;
-    let rounded_sigma = Num::from_f64(round_to(width));
-    let rounded_value = Num::from_f64(round_to(v.to_f64()));
-    let write = |coefficient: Num| -> String {
-        let one = coefficient.is_one();
-        let mut out = String::new();
-        write_expr(
-            &mut out,
-            &Expr::mul(vec![Expr::Num(coefficient, Radix::Dec), v_rest.clone()]),
-            Prec::Add,
-            fmt,
-        );
-        // A prefixed unit like `mA` is not in the formatter's unit set, so
-        // a magnitude of exactly one gets dropped; restore it.
-        if one && !v_rest.is_one() && !out.starts_with(|c: char| c.is_ascii_digit()) {
-            out.insert_str(0, "1 ");
-        }
-        out
-    };
-    Some(format!("{} ± {}", write(rounded_value), write(rounded_sigma)))
+    let sigma_text = format_number(&Num::from_f64(round_to(width)), Radix::Dec, fmt);
+    let value_text = format_number(&Num::from_f64(round_to(v.to_f64())), Radix::Dec, fmt);
+    if v_rest.is_one() {
+        return Some(format!("{value_text} ± {sigma_text}"));
+    }
+    let mut rest = String::new();
+    write_expr(&mut rest, &v_rest, Prec::Mul, fmt);
+    Some(format!("({value_text} ± {sigma_text}) {rest}"))
 }
 
 fn format_number(value: &Num, radix: Radix, fmt: &NumFormat) -> String {
