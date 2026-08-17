@@ -351,6 +351,10 @@ impl Parser {
             let rhs = self.additive();
             return Expr::Range(Box::new(lhs), Box::new(rhs));
         }
+        if self.eat(&Tok::PlusMinus) {
+            let rhs = self.additive();
+            return Expr::PlusMinus(Box::new(lhs), Box::new(rhs));
+        }
         lhs
     }
 

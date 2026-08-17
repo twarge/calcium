@@ -78,6 +78,9 @@ pub fn simplify(expr: &Expr) -> Expr {
                 .collect(),
         ),
         Expr::Range(lo, hi) => Expr::Range(Box::new(simplify(lo)), Box::new(simplify(hi))),
+        Expr::PlusMinus(value, sigma) => {
+            Expr::PlusMinus(Box::new(simplify(value)), Box::new(simplify(sigma)))
+        }
         Expr::Norm(inner, p) => Expr::Norm(
             Box::new(simplify(inner)),
             p.as_ref().map(|p| Box::new(simplify(p))),
@@ -106,7 +109,7 @@ fn negate_cmp(op: CmpOp) -> CmpOp {
 
 /// Splits a term into its numeric coefficient and its symbolic remainder.
 /// `-4.9 m*t^2` becomes `(-4.9, m*t^2)`.
-fn split_coefficient(term: &Expr) -> (Num, Expr) {
+pub(crate) fn split_coefficient(term: &Expr) -> (Num, Expr) {
     match term {
         Expr::Num(value, _) => (value.clone(), Expr::num(1)),
         Expr::Mul(factors) => {
@@ -129,6 +132,9 @@ fn split_coefficient(term: &Expr) -> (Num, Expr) {
 fn radix_of_terms<'a>(terms: impl Iterator<Item = &'a Expr>) -> Radix {
     for term in terms {
         let found = match term {
+            // A sig-figs tag is ordinary decimal here; only true radix
+            // notation infects a result.
+            Expr::Num(_, Radix::Sig(_)) => Radix::Dec,
             Expr::Num(_, style) => *style,
             Expr::Mul(factors) => radix_of_terms(factors.iter()),
             _ => Radix::Dec,
@@ -329,6 +335,19 @@ fn simplify_product(factors: &[Expr]) -> Expr {
         if let Some(result) = interval_product(&flat) {
             return result;
         }
+        // A mixed product — numbers, intervals and symbols together — folds
+        // its numeric part into one interval and leaves the symbols to the
+        // ordinary machinery: `30 * (1..3) * mA` is `(30..90)*mA`, and unit
+        // cancellation still happens below.
+        let (numeric, symbolic): (Vec<Expr>, Vec<Expr>) =
+            flat.iter().cloned().partition(|f| as_interval(f).is_some());
+        if numeric.len() > 1 {
+            if let Some(folded) = interval_product(&numeric) {
+                let mut parts = vec![folded];
+                parts.extend(symbolic);
+                flat = parts;
+            }
+        }
     }
 
     if flat.iter().any(|f| matches!(f, Expr::Matrix(_))) {
@@ -351,7 +370,9 @@ fn simplify_product(factors: &[Expr]) -> Expr {
                 add_power(&mut order, &mut powers, Expr::Num(value, Radix::Dec), Expr::num(1));
             }
             Expr::Num(value, style) => {
-                if style != Radix::Dec {
+                // Only true radix notation infects a product; a sig-figs
+                // tag is a fact about one literal, not about arithmetic.
+                if style != Radix::Dec && !matches!(style, Radix::Sig(_)) {
                     radix = style;
                 }
                 coefficient = coefficient.mul(&value);
@@ -614,6 +635,19 @@ fn simplify_power(base: &Expr, exp: &Expr) -> Expr {
             let repeated = vec![base.clone(); power as usize];
             if let Some(result) = interval_product(&repeated) {
                 return result;
+            }
+        }
+    }
+    // Fractional and negative powers act endpoint-wise where they are
+    // monotone — a nonnegative interval — so `sqrt(1..4)` is `1..2` and
+    // `(2..4)^-1` is `0.25..0.5`. Negative bases stay symbolic.
+    if matches!(base, Expr::Range(..)) {
+        if let (Some((lo, hi)), Some(power)) = (as_interval(base), exp.as_num()) {
+            let negative = power.is_negative();
+            let monotone = !lo.is_negative() && !(negative && lo.is_zero());
+            let handled_above = power.to_i64().map(|p| (0..=64).contains(&p)).unwrap_or(false);
+            if monotone && !handled_above {
+                return interval(lo.pow(power), hi.pow(power));
             }
         }
     }

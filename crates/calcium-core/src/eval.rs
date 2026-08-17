@@ -155,6 +155,10 @@ pub struct Env {
     /// Relations whose left side was not a plain name, e.g. `12x + 13y = 163`.
     pub equations: Vec<(Expr, Expr)>,
     pub fmt: NumFormat,
+    /// `@sigfigs`: decimal literals carry an implied half-ULP uncertainty —
+    /// `2.0` means 2.00 ± 0.05 — propagated exactly like an explicit `±`,
+    /// with results rounded where the uncertainty says the digits end.
+    pub sigfigs: bool,
 }
 
 /// Evaluation context: what is bound locally, what we are already inside of,
@@ -174,6 +178,167 @@ pub struct Ctx {
     /// How many function applications deep we are. Recursion is allowed — the
     /// Reference advertises it — so this is what actually bounds it.
     pub calls: usize,
+    /// When present, every `±` encountered is replaced by an internal marker
+    /// symbol and recorded here — the collection pass of error propagation.
+    /// Shared, because sub-contexts (unit expansion inside a conversion)
+    /// must feed the same table.
+    pub pm: Option<std::rc::Rc<std::cell::RefCell<PmState>>>,
+}
+
+/// The `±` occurrences met while collecting: each becomes one independent
+/// random variable, keyed by where it appeared, so a definition expanded
+/// twice contributes one variable rather than two uncorrelated copies.
+#[derive(Debug, Default)]
+pub struct PmState {
+    pub table: Vec<PmSource>,
+    /// (owning definition, source form) -> marker index.
+    keys: HashMap<(String, String), usize>,
+}
+
+/// One source of uncertainty, already evaluated.
+#[derive(Clone, Debug)]
+pub struct PmSource {
+    pub centre: Expr,
+    pub sigma: Expr,
+    /// Implied by a literal's significant figures rather than written `±`.
+    /// A result whose uncertainty is entirely implied displays as a plain
+    /// number rounded to its significant digits, not as `a ± b`.
+    pub implied: bool,
+}
+
+impl PmState {
+    /// Registers one occurrence, or finds the marker it already has.
+    fn intern(&mut self, key: (String, String), source: PmSource) -> usize {
+        match self.keys.get(&key) {
+            Some(&index) => index,
+            None => {
+                let index = self.table.len();
+                self.table.push(source);
+                self.keys.insert(key, index);
+                index
+            }
+        }
+    }
+}
+
+/// Internal marker symbols carry the one character no user name can start
+/// with, since the lexer reads `±` as an operator.
+fn marker_name(index: usize) -> String {
+    format!("±{index}")
+}
+
+fn is_marker(name: &str) -> bool {
+    name.starts_with('±')
+}
+
+/// Replaces every sig-figs number tag with plain decimal, recursively.
+fn strip_sig(expr: &Expr) -> Expr {
+    let strip = |e: &Expr| Box::new(strip_sig(e));
+    match expr {
+        Expr::Num(value, Radix::Sig(_)) => Expr::Num(value.clone(), Radix::Dec),
+        Expr::Num(..) | Expr::Str(_) | Expr::Bool(_) | Expr::Var(_) | Expr::AiQuery
+        | Expr::Error(_) => expr.clone(),
+        Expr::Add(items) => Expr::Add(items.iter().map(strip_sig).collect()),
+        Expr::Mul(items) => Expr::Mul(items.iter().map(strip_sig).collect()),
+        Expr::Pow(a, b) => Expr::Pow(strip(a), strip(b)),
+        Expr::Range(a, b) => Expr::Range(strip(a), strip(b)),
+        Expr::PlusMinus(a, b) => Expr::PlusMinus(strip(a), strip(b)),
+        Expr::Convert(a, b) => Expr::Convert(strip(a), strip(b)),
+        Expr::Relation(a, b) => Expr::Relation(strip(a), strip(b)),
+        Expr::Mod(a, b) => Expr::Mod(strip(a), strip(b)),
+        Expr::Cmp(op, a, b) => Expr::Cmp(*op, strip(a), strip(b)),
+        Expr::Logic(op, a, b) => Expr::Logic(*op, strip(a), strip(b)),
+        Expr::Bit(op, a, b) => Expr::Bit(*op, strip(a), strip(b)),
+        Expr::Abs(a) => Expr::Abs(strip(a)),
+        Expr::Not(a) => Expr::Not(strip(a)),
+        Expr::Transpose(a) => Expr::Transpose(strip(a)),
+        Expr::Norm(a, p) => Expr::Norm(strip(a), p.as_ref().map(|p| strip(p))),
+        Expr::If(c, t, f) => Expr::If(strip(c), strip(t), strip(f)),
+        Expr::Let(name, value, body) => Expr::Let(name.clone(), strip(value), strip(body)),
+        Expr::Call(name, args) => Expr::Call(
+            name.clone(),
+            args.iter()
+                .map(|a| Arg { name: a.name.clone(), value: strip_sig(&a.value) })
+                .collect(),
+        ),
+        Expr::Index(base, indices) => {
+            Expr::Index(strip(base), indices.iter().map(strip_sig).collect())
+        }
+        Expr::Matrix(rows) => Expr::Matrix(
+            rows.iter()
+                .map(|row| row.iter().map(strip_sig).collect())
+                .collect(),
+        ),
+        Expr::Dict(entries) => Expr::Dict(
+            entries
+                .iter()
+                .map(|(k, v)| (k.clone(), strip_sig(v)))
+                .collect(),
+        ),
+    }
+}
+
+/// A value cut off at its uncertainty's leading digit: 6.2199 with sigma
+/// 0.17 rounds to 6.2. Requires both to be quantities of the same thing.
+fn round_to_sigma(centre: &Expr, sigma: &Expr) -> Option<Expr> {
+    let (v, v_rest) = crate::simplify::split_coefficient(centre);
+    let (s, s_rest) = crate::simplify::split_coefficient(sigma);
+    if render(&v_rest) != render(&s_rest) {
+        return None;
+    }
+    let width = s.to_f64();
+    if !width.is_finite() || width <= 0.0 {
+        return None;
+    }
+    // The last meaningful place is the one whose half-ULP the uncertainty
+    // amounts to: sigma 0.05 marks the tenths as the final digit, which is
+    // exactly the classic sig-figs answer.
+    let place = (2.0 * width).abs().log10().floor() as i32;
+    let quantum = 10f64.powi(place);
+    let rounded = Num::from_f64((v.to_f64() / quantum).round() * quantum);
+    let style = if place < 0 {
+        Radix::Sig(-place)
+    } else {
+        Radix::Dec
+    };
+    // Assembled by hand, not simplified: the simplifier treats the sig-figs
+    // tag as arithmetic-inert and would strip the trailing zeros this
+    // rounding exists to show.
+    let number = Expr::Num(rounded, style);
+    if v_rest.is_one() {
+        return Some(number);
+    }
+    Some(Expr::mul(vec![number, v_rest]))
+}
+
+/// Whether a source of uncertainty appears anywhere in the expression: a
+/// `±` always counts, and with sig-figs on, so does a decimal-pointed
+/// literal.
+fn mentions_uncertain(expr: &Expr, sigfigs: bool) -> bool {
+    let mentions_pm = |e: &Expr| mentions_uncertain(e, sigfigs);
+    match expr {
+        Expr::PlusMinus(..) => true,
+        Expr::Num(_, Radix::Sig(_)) => sigfigs,
+        Expr::Num(..) | Expr::Str(_) | Expr::Bool(_) | Expr::Var(_) | Expr::AiQuery
+        | Expr::Error(_) => false,
+        Expr::Add(items) | Expr::Mul(items) => items.iter().any(mentions_pm),
+        Expr::Matrix(rows) => rows.iter().flatten().any(mentions_pm),
+        Expr::Dict(entries) => entries.iter().any(|(_, v)| mentions_pm(v)),
+        Expr::Call(_, args) => args.iter().any(|a| mentions_pm(&a.value)),
+        Expr::Index(base, indices) => mentions_pm(base) || indices.iter().any(mentions_pm),
+        Expr::Pow(a, b)
+        | Expr::Range(a, b)
+        | Expr::Cmp(_, a, b)
+        | Expr::Logic(_, a, b)
+        | Expr::Bit(_, a, b)
+        | Expr::Mod(a, b)
+        | Expr::Convert(a, b)
+        | Expr::Relation(a, b) => mentions_pm(a) || mentions_pm(b),
+        Expr::Abs(a) | Expr::Not(a) | Expr::Transpose(a) => mentions_pm(a),
+        Expr::Norm(a, p) => mentions_pm(a) || p.as_deref().map(mentions_pm).unwrap_or(false),
+        Expr::If(c, t, f) => mentions_pm(c) || mentions_pm(t) || mentions_pm(f),
+        Expr::Let(_, value, body) => mentions_pm(value) || mentions_pm(body),
+    }
 }
 
 const MAX_DEPTH: usize = 512;
@@ -222,6 +387,10 @@ impl Env {
             }
             for statement in parse_line(trimmed) {
                 if let Stmt::Define { name, params, body } = statement.stmt {
+                    // Prelude decimals are exact by definition — CODATA
+                    // values, statute pounds — so the sig-figs tags their
+                    // decimal points would otherwise carry are stripped.
+                    let body = strip_sig(&body);
                     env.insert(
                         name,
                         Def { params, body, is_unit: defining_units, from_prelude: true },
@@ -327,6 +496,101 @@ impl Env {
     // -- evaluation ---------------------------------------------------------
 
     /// Evaluates an expression in ordinary (non-expanding) mode.
+    /// First-order Gaussian error propagation for a top-level `=>`.
+    ///
+    /// Returns None when nothing reachable carries a `±`, so the caller
+    /// keeps its ordinary path. Otherwise: every `±` occurrence becomes an
+    /// independent random variable, the expression is evaluated symbolically
+    /// over those variables — correlations through shared definitions
+    /// survive, so `m - m` is exactly 0 — and the result is
+    /// centre ± sqrt(sum of (∂f/∂xᵢ · σᵢ)²), the partials taken
+    /// symbolically and evaluated at the centres.
+    pub fn eval_uncertain(&self, expr: &Expr) -> Option<Expr> {
+        if !self.reaches_pm(expr) {
+            return None;
+        }
+        let state = std::rc::Rc::new(std::cell::RefCell::new(PmState::default()));
+        let mut collect = Ctx {
+            pm: Some(state.clone()),
+            ..Ctx::default()
+        };
+        let symbolic = simplify(&self.eval_in(expr, &mut collect));
+        let table: Vec<PmSource> = state.borrow().table.clone();
+        if table.is_empty() {
+            return None;
+        }
+
+        let centres: HashMap<String, Expr> = table
+            .iter()
+            .enumerate()
+            .map(|(index, source)| (marker_name(index), source.centre.clone()))
+            .collect();
+        let at_centres = |e: &Expr| -> Expr {
+            let mut ctx = Ctx {
+                locals: centres.clone(),
+                ..Ctx::default()
+            };
+            simplify(&self.eval_in(e, &mut ctx))
+        };
+        let centre = at_centres(&symbolic);
+
+        let mut squares = Vec::new();
+        let mut explicit = false;
+        for (index, source) in table.iter().enumerate() {
+            let slope = builtins::differentiate(&symbolic, &marker_name(index));
+            let contribution =
+                simplify(&Expr::mul(vec![at_centres(&slope), source.sigma.clone()]));
+            if contribution.is_zero() {
+                continue;
+            }
+            explicit |= !source.implied;
+            squares.push(Expr::Pow(Box::new(contribution), Box::new(Expr::num(2))));
+        }
+        // Every derivative vanished: the uncertainty cancelled out exactly.
+        if squares.is_empty() {
+            return Some(centre);
+        }
+        let sigma = self.eval(&Expr::Pow(
+            Box::new(Expr::add(squares)),
+            Box::new(Expr::Num(Num::ratio(1, 2), Radix::Dec)),
+        ));
+        // Purely implied uncertainty — significant figures, no written `±` —
+        // displays as a plain number cut where the digits stop meaning
+        // anything, which is what sig-figs arithmetic is.
+        if !explicit {
+            if let Some(rounded) = round_to_sigma(&centre, &sigma) {
+                return Some(rounded);
+            }
+        }
+        Some(Expr::PlusMinus(Box::new(centre), Box::new(sigma)))
+    }
+
+    /// Whether the expression, or any definition reachable from it, carries
+    /// a source of uncertainty — the cheap gate in front of the propagation
+    /// machinery. Prelude definitions are skipped: their decimals are exact.
+    fn reaches_pm(&self, expr: &Expr) -> bool {
+        if mentions_uncertain(expr, self.sigfigs) {
+            return true;
+        }
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut work: Vec<String> = expr.free_vars();
+        while let Some(name) = work.pop() {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            if let Some(def) = self.get(&name) {
+                if def.from_prelude {
+                    continue;
+                }
+                if mentions_uncertain(&def.body, self.sigfigs) {
+                    return true;
+                }
+                work.extend(def.body.free_vars());
+            }
+        }
+        false
+    }
+
     pub fn eval(&self, expr: &Expr) -> Expr {
         let mut ctx = Ctx::default();
         simplify(&self.eval_in(expr, &mut ctx))
@@ -366,6 +630,27 @@ impl Env {
 
     fn eval_inner(&self, expr: &Expr, ctx: &mut Ctx) -> Expr {
         match expr {
+            // Under `@sigfigs`, a decimal-pointed literal met while
+            // collecting carries an implied half-ULP uncertainty. Prelude
+            // bodies are exempt: `lb = 0.45359237 kg` is exact by statute.
+            Expr::Num(value, Radix::Sig(decimals))
+                if self.sigfigs && !ctx.in_prelude && ctx.pm.is_some() =>
+            {
+                let pm = ctx.pm.clone().unwrap();
+                let owner = ctx.active.last().cloned().unwrap_or_default();
+                let key = (owner, format!("{}#{decimals}", render(expr)));
+                let sigma = Num::ratio(1, 2)
+                    .mul(&Num::from_i64(10).pow(&Num::from_i64(-(*decimals as i64))));
+                let index = pm.borrow_mut().intern(
+                    key,
+                    PmSource {
+                        centre: Expr::Num(value.clone(), Radix::Dec),
+                        sigma: Expr::Num(sigma, Radix::Dec),
+                        implied: true,
+                    },
+                );
+                return Expr::var(marker_name(index));
+            }
             Expr::Num(..) | Expr::Str(_) | Expr::Bool(_) | Expr::Error(_) | Expr::AiQuery => {
                 expr.clone()
             }
@@ -410,6 +695,29 @@ impl Env {
                 Box::new(self.eval_in(lo, ctx)),
                 Box::new(self.eval_in(hi, ctx)),
             ),
+            Expr::PlusMinus(value, sigma) => {
+                // The parts of a `±` are exact by declaration: `2.0 ± 0.5`
+                // has a sigma of exactly 0.5, and the written uncertainty
+                // supersedes any the literals would imply. Collection stops
+                // at this node's boundary and resumes after.
+                let collecting = ctx.pm.take();
+                let value = self.eval_in(value, ctx);
+                let sigma = self.eval_in(sigma, ctx);
+                ctx.pm = collecting;
+                if let Some(pm) = ctx.pm.clone() {
+                    // Collecting: this occurrence becomes a marker symbol.
+                    // The key ties repeated expansions of one definition to
+                    // one random variable.
+                    let owner = ctx.active.last().cloned().unwrap_or_default();
+                    let key = (owner, crate::format::render(expr));
+                    let index = pm.borrow_mut().intern(
+                        key,
+                        PmSource { centre: value, sigma, implied: false },
+                    );
+                    return Expr::var(marker_name(index));
+                }
+                Expr::PlusMinus(Box::new(value), Box::new(sigma))
+            }
             Expr::Dict(entries) => Expr::Dict(
                 entries
                     .iter()
@@ -697,6 +1005,7 @@ impl Env {
             in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
+            pm: ctx.pm.clone(),
         };
         let expanded_value = simplify(&self.eval_in(value, &mut expanding));
         let expanded_unit = simplify(&self.eval_in(unit, &mut expanding));
@@ -719,6 +1028,27 @@ impl Env {
         if quotient.as_num().is_some() {
             let unit = display_unit(self, ctx);
             return simplify(&Expr::mul(vec![quotient, unit]));
+        }
+
+        // An interval converts endpoint-wise: the quotient of a measured
+        // range by the unit is a numeric range, and it takes the unit the
+        // author asked for just as a number would.
+        if let Expr::Range(lo, hi) = &quotient {
+            if lo.as_num().is_some() && hi.as_num().is_some() {
+                let unit = display_unit(self, ctx);
+                return simplify(&Expr::mul(vec![quotient.clone(), unit]));
+            }
+        }
+
+        // While collecting uncertainty the value carries marker symbols. A
+        // quotient whose only symbols are markers is a clean number for
+        // every draw of those variables, so it converts like one.
+        if ctx.pm.is_some() && quotient.as_num().is_none() {
+            let vars = quotient.free_vars();
+            if !vars.is_empty() && vars.iter().all(|v| is_marker(v)) {
+                let unit = display_unit(self, ctx);
+                return simplify(&Expr::mul(vec![quotient.clone(), unit]));
+            }
         }
 
         // A dimensionless value converted to a unit just takes that unit. The
@@ -958,6 +1288,53 @@ mod tests {
         assert_eq!(e(&env, "100 ft in m"), "30.48 m");
         assert_eq!(e(&env, "100 yards in m"), "91.44 m");
         assert_eq!(e(&env, "6 tablespoons in cups"), "0.375 cups");
+    }
+
+    #[test]
+    fn uncertainty_propagates_by_first_order_analysis() {
+        let (env, _) = run(&["m = 2 ± 1", "a = 10 ± 0.3", "b = 7 ± 0.4"]);
+        let u = |src: &str| render(&env.eval_uncertain(&parse_expr(src)).unwrap());
+        assert_eq!(u("m"), "2 ± 1");
+        assert_eq!(u("m + 3"), "5 ± 1");
+        // First-order, not interval: sigma is 2·m·σ, and the centre is exact.
+        assert_eq!(u("m^2"), "4 ± 4");
+        // Independent errors add in quadrature: sqrt(0.3² + 0.4²) = 0.5.
+        assert_eq!(u("a + b"), "17 ± 0.5");
+        assert_eq!(u("a*b"), "70 ± 4.5");
+        // Correlation through a shared variable cancels exactly.
+        assert_eq!(u("m - m"), "0");
+        // And partially: a/(a+b) is not the independent-quotient formula.
+        assert_eq!(u("a/(a + b)"), "0.588 ± 0.016");
+    }
+
+    #[test]
+    fn uncertainty_carries_units_and_conversions() {
+        let (env, _) = run(&["current = (50 ± 1) mA", "R = 2 kΩ"]);
+        let u = |src: &str| render(&env.eval_uncertain(&parse_expr(src)).unwrap());
+        assert_eq!(u("current"), "50 mA ± 1 mA");
+        assert_eq!(u("current in A"), "0.05 A ± 0.001 A");
+        assert_eq!(u("current * R in V"), "100 V ± 2 V");
+    }
+
+    #[test]
+    fn certain_expressions_take_the_ordinary_path() {
+        let (env, _) = run(&["x = 4"]);
+        assert!(env.eval_uncertain(&parse_expr("x + 1")).is_none());
+        assert!(env.eval_uncertain(&parse_expr("100 ft in m")).is_none());
+    }
+
+    #[test]
+    fn intervals_convert_scale_and_pass_through_monotone_functions() {
+        let env = env();
+        // Endpoint-wise conversion, scaling, and inversion.
+        assert_eq!(e(&env, "(100..200) cm in m"), "(1..2)*m");
+        assert_eq!(e(&env, "(1..3) * 30 mA"), "(30..90)*mA");
+        assert_eq!(e(&env, "(2..4)^-1"), "0.25..0.5");
+        // Monotone functions act on the endpoints; sqrt keeps exactness.
+        assert_eq!(e(&env, "sqrt(1..4)"), "1..2");
+        assert_eq!(e(&env, "log10(10..1000)"), "1..3");
+        // A negative-reaching interval has no real square root; stay put.
+        assert_eq!(e(&env, "sqrt(-4..4)"), "sqrt(-4..4)");
     }
 
     #[test]

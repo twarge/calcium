@@ -183,6 +183,23 @@ uncertainty through.
     measured = (5 - 0.1)..(5 + 0.1) => 4.9..5.1
     measured^2                      => 24.01..26.01
 
+A symmetric one-sigma error is written with `±`, and it propagates by error
+analysis rather than worst case: independent errors add in quadrature, and a
+variable is exactly correlated with itself.
+
+    speed = 20 ± 0.5
+    drag  = 4 ± 0.3
+
+    speed + drag  => 24 ± 0.58
+    speed - speed => 0
+
+With `@sigfigs`, decimal points measure how much of a literal is real: `2.0`
+has two significant figures, `2.` has one, and a bare `2` is exact.
+
+    @sigfigs
+    2.0 * 3.11 => 6.2
+    @sigfigs = off
+
 
 ## Calculus
 

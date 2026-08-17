@@ -30,6 +30,9 @@ pub enum Expr {
     Matrix(Vec<Vec<Expr>>),
     /// `lo..hi`, inclusive. Doubles as an interval for interval arithmetic.
     Range(Box<Expr>, Box<Expr>),
+    /// `value ± sigma` — a measured value with a one-sigma uncertainty,
+    /// propagated through calculations by first-order error analysis.
+    PlusMinus(Box<Expr>, Box<Expr>),
     Dict(Vec<(String, Expr)>),
 
     /// `|x|` — absolute value, vector length, or determinant depending on
@@ -226,6 +229,7 @@ impl Expr {
             }
             Expr::Pow(a, b)
             | Expr::Range(a, b)
+            | Expr::PlusMinus(a, b)
             | Expr::Cmp(_, a, b)
             | Expr::Logic(_, a, b)
             | Expr::Bit(_, a, b)

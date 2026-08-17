@@ -199,7 +199,11 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                     }
                     env.define(name, params.clone(), body.clone());
                     if statement.arrow {
-                        result = Some(env.eval(&Expr::var(name)));
+                        let target = Expr::var(name);
+                        result = Some(
+                            env.eval_uncertain(&target)
+                                .unwrap_or_else(|| env.eval(&target)),
+                        );
                     }
                 }
                 Stmt::SumDefine { name } => {
@@ -229,7 +233,10 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                         sum.close(env);
                     }
                     if statement.arrow {
-                        result = Some(solve::evaluate_or_solve(env, expr));
+                        result = Some(
+                            env.eval_uncertain(expr)
+                                .unwrap_or_else(|| solve::evaluate_or_solve(env, expr)),
+                        );
                     }
                 }
             }
@@ -283,7 +290,7 @@ fn first_error(expr: &Expr) -> Option<String> {
         Expr::Error(message) => Some(message.clone()),
         Expr::Add(items) | Expr::Mul(items) => items.iter().find_map(first_error),
         Expr::Matrix(rows) => rows.iter().flatten().find_map(first_error),
-        Expr::Pow(a, b) | Expr::Convert(a, b) | Expr::Relation(a, b) => {
+        Expr::Pow(a, b) | Expr::Convert(a, b) | Expr::Relation(a, b) | Expr::PlusMinus(a, b) => {
             first_error(a).or_else(|| first_error(b))
         }
         Expr::Call(_, args) => args.iter().find_map(|a| first_error(&a.value)),
@@ -300,7 +307,7 @@ fn holds_error(expr: &Expr) -> bool {
         Expr::Error(_) => true,
         Expr::Add(items) | Expr::Mul(items) => items.iter().any(holds_error),
         Expr::Matrix(rows) => rows.iter().flatten().any(holds_error),
-        Expr::Pow(a, b) | Expr::Convert(a, b) | Expr::Relation(a, b) => {
+        Expr::Pow(a, b) | Expr::Convert(a, b) | Expr::Relation(a, b) | Expr::PlusMinus(a, b) => {
             holds_error(a) || holds_error(b)
         }
         Expr::Call(_, args) => args.iter().any(|a| holds_error(&a.value)),
@@ -338,6 +345,16 @@ fn apply_directive(env: &mut Env, name: &str, value: Option<&Expr>) {
                 env.fmt.grouping = !matches!(v, Expr::Bool(false))
                     && !matches!(&v, Expr::Num(n, _) if n.is_zero());
             }
+        }
+        "sigfigs" | "sigfig" | "sf" => {
+            env.sigfigs = match value.map(|v| env.eval(v)) {
+                None => true,
+                Some(v) => {
+                    !matches!(v, Expr::Bool(false))
+                        && !matches!(&v, Expr::Num(n, _) if n.is_zero())
+                        && !matches!(&v, Expr::Var(word) if word == "off" || word == "no")
+                }
+            };
         }
         culture => apply_culture(&mut env.fmt, culture),
     }
@@ -961,6 +978,29 @@ mod tests {
             assert!(answers[0].is_error, "not flagged as an error: {source:?}");
             assert!(!answers[0].text.is_empty(), "empty message for {source:?}");
         }
+    }
+
+    #[test]
+    fn sigfigs_directive_reads_decimal_points_as_precision() {
+        let source = "    @sigfigs\n    2.0 * 3.11 => 0\n    2. * 3.11 => 0\n    1.5 + 2.50 => 0\n    2 * 3.11 => 0";
+        let texts: Vec<String> = evaluate(source).answers.iter().map(|a| a.text.clone()).collect();
+        // Two sig figs, one, tenths from the coarser addend — and an exact
+        // integer imposes no limit at all.
+        assert_eq!(texts, vec!["6.2", "6", "4.0", "6.22"]);
+    }
+
+    #[test]
+    fn sigfigs_defaults_off_and_the_directive_can_revoke_it() {
+        let plain = evaluate("    2.0 * 3.11 => 0");
+        assert_eq!(plain.answers[0].text, "6.22");
+        let revoked = evaluate("    @sigfigs\n    @sigfigs = off\n    2.0 * 3.11 => 0");
+        assert_eq!(revoked.answers[0].text, "6.22");
+    }
+
+    #[test]
+    fn explicit_uncertainty_survives_sigfigs_mode() {
+        let document = evaluate("    @sigfigs\n    (2 ± 0.5) * 3.11 => 0");
+        assert_eq!(document.answers[0].text, "6.2 ± 1.6");
     }
 
     #[test]

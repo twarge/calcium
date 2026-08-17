@@ -97,7 +97,7 @@ fn precedence(expr: &Expr) -> Prec {
         Expr::Cmp(..) | Expr::Relation(..) => Prec::Compare,
         Expr::Logic(LogicOp::Or, ..) | Expr::Bit(BitOp::Or, ..) => Prec::Or,
         Expr::Logic(LogicOp::And, ..) | Expr::Bit(BitOp::And, ..) => Prec::And,
-        Expr::Range(..) => Prec::Range,
+        Expr::Range(..) | Expr::PlusMinus(..) => Prec::Range,
         Expr::Convert(..) => Prec::Convert,
         Expr::If(..) | Expr::Let(..) => Prec::Lowest,
         _ => Prec::Atom,
@@ -208,6 +208,23 @@ fn write_bare(out: &mut String, expr: &Expr, fmt: &NumFormat) {
             out.push_str("..");
             write_expr(out, hi, Prec::Add, fmt);
         }
+        Expr::PlusMinus(value, sigma) => {
+            if let Some(text) = rounded_uncertain(value, sigma, fmt) {
+                out.push_str(&text);
+                return;
+            }
+            // A side that is nothing but a unit still has a magnitude of
+            // one: `50 mA ± 1 mA`, never `± mA`.
+            let side = |out: &mut String, e: &Expr| {
+                if matches!(e, Expr::Var(name) if fmt.units.contains(name)) {
+                    out.push_str("1 ");
+                }
+                write_expr(out, e, Prec::Add, fmt);
+            };
+            side(out, value);
+            out.push_str(" ± ");
+            side(out, sigma);
+        }
         Expr::Abs(inner) => {
             out.push('|');
             write_expr(out, inner, Prec::Lowest, fmt);
@@ -293,9 +310,52 @@ fn write_bare(out: &mut String, expr: &Expr, fmt: &NumFormat) {
     }
 }
 
+/// `centre ± sigma` in the physics convention: the uncertainty shown to two
+/// significant figures, the centre rounded to the same decimal place. Only
+/// when both sides are quantities of the same thing — same units, same
+/// symbols — so the rounding is honest; anything stranger prints plainly.
+fn rounded_uncertain(value: &Expr, sigma: &Expr, fmt: &NumFormat) -> Option<String> {
+    let (v, v_rest) = crate::simplify::split_coefficient(value);
+    let (s, s_rest) = crate::simplify::split_coefficient(sigma);
+    if render(&v_rest) != render(&s_rest) {
+        return None;
+    }
+    let width = s.to_f64();
+    if !width.is_finite() || width <= 0.0 {
+        return None;
+    }
+    // The decimal place of the uncertainty's second significant digit.
+    let place = width.abs().log10().floor() as i32 - 1;
+    let quantum = 10f64.powi(place);
+    let round_to = |x: f64| (x / quantum).round() * quantum;
+    let rounded_sigma = Num::from_f64(round_to(width));
+    let rounded_value = Num::from_f64(round_to(v.to_f64()));
+    let write = |coefficient: Num| -> String {
+        let one = coefficient.is_one();
+        let mut out = String::new();
+        write_expr(
+            &mut out,
+            &Expr::mul(vec![Expr::Num(coefficient, Radix::Dec), v_rest.clone()]),
+            Prec::Add,
+            fmt,
+        );
+        // A prefixed unit like `mA` is not in the formatter's unit set, so
+        // a magnitude of exactly one gets dropped; restore it.
+        if one && !v_rest.is_one() && !out.starts_with(|c: char| c.is_ascii_digit()) {
+            out.insert_str(0, "1 ");
+        }
+        out
+    };
+    Some(format!("{} ± {}", write(rounded_value), write(rounded_sigma)))
+}
+
 fn format_number(value: &Num, radix: Radix, fmt: &NumFormat) -> String {
     match radix {
-        Radix::Dec => value.format(fmt),
+        // A sig-figs tag keeps its typed decimal places — `2.50` stays
+        // `2.50` — which is also how a rounded sig-figs result shows where
+        // its digits stop meaning anything.
+        Radix::Sig(decimals) if decimals > 0 => fixed_decimals(value, decimals as usize, fmt),
+        Radix::Dec | Radix::Sig(_) => value.format(fmt),
         Radix::Hex => value
             .to_bigint()
             .map(|v| format!("0x{v:X}"))
@@ -308,6 +368,34 @@ fn format_number(value: &Num, radix: Radix, fmt: &NumFormat) -> String {
             .to_bigint()
             .map(|v| format!("0b{v:b}"))
             .unwrap_or_else(|| value.format(fmt)),
+    }
+}
+
+/// A value at a fixed number of decimal places, honouring the separators
+/// and grouping of the ambient format.
+fn fixed_decimals(value: &Num, decimals: usize, fmt: &NumFormat) -> String {
+    let text = format!("{:.*}", decimals, value.to_f64());
+    let (integer, fraction) = text.split_once('.').unwrap_or((text.as_str(), ""));
+    let (sign, digits) = match integer.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", integer),
+    };
+    let grouped = if fmt.grouping && digits.len() > 3 {
+        let mut out = String::new();
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i) % 3 == 0 {
+                out.push(fmt.group_sep);
+            }
+            out.push(c);
+        }
+        out
+    } else {
+        digits.to_string()
+    };
+    if fraction.is_empty() {
+        format!("{sign}{grouped}")
+    } else {
+        format!("{sign}{grouped}{}{fraction}", fmt.decimal_sep)
     }
 }
 
@@ -454,18 +542,25 @@ fn write_product(out: &mut String, factors: &[Expr], fmt: &NumFormat) {
     let mut coefficient: Option<Expr> = None;
     let mut product = Num::one();
     let mut saw_number = false;
+    let mut numbers = 0usize;
+    let mut sole_style = Radix::Dec;
     numerator.retain(|factor| match factor {
-        Expr::Num(value, Radix::Dec) => {
+        Expr::Num(value, style @ (Radix::Dec | Radix::Sig(_))) => {
             product = product.mul(value);
             saw_number = true;
+            numbers += 1;
+            sole_style = *style;
             false
         }
         _ => true,
     });
+    // A lone number keeps its written style — the sig-figs tag on a rounded
+    // `4.0 m` survives — while a folded product is plain decimal.
+    let folded_style = if numbers == 1 { sole_style } else { Radix::Dec };
     if saw_number && !product.is_one() {
-        coefficient = Some(Expr::Num(product.clone(), Radix::Dec));
+        coefficient = Some(Expr::Num(product.clone(), folded_style));
     } else if saw_number && numerator.is_empty() && denominator.is_empty() {
-        coefficient = Some(Expr::Num(product.clone(), Radix::Dec));
+        coefficient = Some(Expr::Num(product.clone(), folded_style));
     } else if saw_number && product.is_one() {
         // `1*x` renders as plain `x`.
     }
@@ -528,10 +623,14 @@ fn write_product(out: &mut String, factors: &[Expr], fmt: &NumFormat) {
 
     if body.is_empty() {
         body.push('1');
-    } else if coefficient.is_none() && names_a_unit {
+    } else if coefficient.is_none()
+        && names_a_unit
+        && !numerator.iter().any(|f| matches!(f, Expr::Range(..)))
+    {
         // A quantity of exactly one still has a magnitude, and dropping it
         // makes a conversion look like it failed: `760 torr in atm` should
-        // answer `1 atm`, not `atm`.
+        // answer `1 atm`, not `atm`. An interval already carries its
+        // magnitude: `(1..2)*m` takes no leading one.
         body.insert_str(0, "1 ");
     }
 

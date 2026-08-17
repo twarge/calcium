@@ -231,6 +231,7 @@ fn statement_holds_error(statement: &Statement) -> bool {
             }
             Expr::Pow(a, b)
             | Expr::Range(a, b)
+            | Expr::PlusMinus(a, b)
             | Expr::Cmp(_, a, b)
             | Expr::Logic(_, a, b)
             | Expr::Bit(_, a, b)
@@ -663,6 +664,11 @@ impl Renderer {
                 self.expr(lo, Prec::Add),
                 self.expr(hi, Prec::Add)
             ),
+            Expr::PlusMinus(value, sigma) => format!(
+                "{} plus.minus {}",
+                self.expr(value, Prec::Add),
+                self.expr(sigma, Prec::Add)
+            ),
             Expr::Abs(inner) => format!("abs({})", self.expr(inner, Prec::Lowest)),
             Expr::Norm(inner, p) => match p {
                 Some(p) => format!(
@@ -759,7 +765,7 @@ impl Renderer {
 
     fn number(&self, value: &Num, radix: Radix) -> String {
         let text = match radix {
-            Radix::Dec => value.format(&self.fmt),
+            Radix::Dec | Radix::Sig(_) => value.format(&self.fmt),
             // Radix literals are text, not magnitudes to typeset.
             _ => return format!("\"{}\"", crate::format::render(&Expr::Num(value.clone(), radix))),
         };
@@ -941,7 +947,7 @@ fn precedence(expr: &Expr) -> Prec {
         Expr::Add(_) => Prec::Add,
         Expr::Mul(_) | Expr::Mod(..) => Prec::Mul,
         Expr::Cmp(..) | Expr::Relation(..) | Expr::Logic(..) | Expr::Bit(..) => Prec::Lowest,
-        Expr::Range(..) | Expr::If(..) | Expr::Let(..) => Prec::Lowest,
+        Expr::Range(..) | Expr::PlusMinus(..) | Expr::If(..) | Expr::Let(..) => Prec::Lowest,
         Expr::Convert(value, _) => precedence(value),
         _ => Prec::Atom,
     }
@@ -1109,6 +1115,12 @@ mod tests {
     fn a_documents_own_name_outranks_a_prelude_unit() {
         let out = to_typst("    T = 125\n    y = 2*T => 250\n");
         assert!(out.contains("y &= 2 T = 250"), "got:\n{out}");
+    }
+
+    #[test]
+    fn uncertainties_typeset_with_the_plus_minus_symbol() {
+        let out = to_typst("    q = 2 ± 1\n    q + 3 => 5 ± 1\n");
+        assert!(out.contains("q + 3 &= 5 plus.minus 1"), "got:\n{out}");
     }
 
     #[test]

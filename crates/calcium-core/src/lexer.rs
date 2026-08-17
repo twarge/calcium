@@ -11,13 +11,19 @@
 use crate::num::Num;
 use num_bigint::BigInt;
 
-/// How an integer was written, so `0xCC => 0xCC` can round-trip.
+/// How a number was written, so `0xCC => 0xCC` can round-trip.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Radix {
     Dec,
     Hex,
     Oct,
     Bin,
+    /// Decimal, written with a decimal point: the payload is the power of
+    /// ten of the last typed digit's place, negated — `2.0` is `Sig(1)`,
+    /// `2.` is `Sig(0)`, `1.5e-3` is `Sig(4)`. Formats exactly like `Dec`;
+    /// under `@sigfigs` the evaluator reads it as an implied half-ULP
+    /// uncertainty.
+    Sig(i32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +57,8 @@ pub enum Tok {
     PlusEq,
     Arrow,
     DotDot,
+    /// `±` — a value with an uncertainty.
+    PlusMinus,
 
     LParen,
     RParen,
@@ -330,7 +338,9 @@ impl<'a> Lexer<'a> {
         self.take_grouped_digits(&mut mantissa);
 
         let mut scale = 0i64; // digits after the decimal point
+        let mut has_point = false;
         if self.peek() == Some('.') && matches!(self.peek_at(1), Some(d) if d.is_ascii_digit()) {
+            has_point = true;
             self.bump();
             while let Some(c) = self.peek() {
                 if c.is_ascii_digit() {
@@ -343,6 +353,11 @@ impl<'a> Lexer<'a> {
                     break;
                 }
             }
+        } else if self.peek() == Some('.') && self.peek_at(1) != Some('.') {
+            // A trailing point — `2.` — marks the ones place as the last
+            // significant digit. Two points would be a range.
+            has_point = true;
+            self.bump();
         }
 
         let mut exponent = 0i64;
@@ -387,7 +402,12 @@ impl<'a> Lexer<'a> {
             let ten = Num::from_i64(10);
             value = value.mul(&ten.pow(&Num::from_i64(power)));
         }
-        Tok::Num(value, Radix::Dec)
+        let style = if has_point {
+            Radix::Sig((scale - exponent).clamp(i32::MIN as i64, i32::MAX as i64) as i32)
+        } else {
+            Radix::Dec
+        };
+        Tok::Num(value, style)
     }
 
     /// Consumes digits, absorbing `,` only where it is unambiguously a
@@ -514,6 +534,7 @@ impl<'a> Lexer<'a> {
             ']' => Tok::RBracket,
             '{' => Tok::LBrace,
             '}' => Tok::RBrace,
+            '±' => Tok::PlusMinus,
             ',' => Tok::Comma,
             ';' => Tok::Semi,
             ':' => Tok::Colon,

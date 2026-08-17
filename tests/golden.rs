@@ -16,6 +16,7 @@ const FLOORS: &[(&str, f64)] = &[
     ("corpus/tour.calcium", 100.0),
     ("corpus/reference.calcium", 100.0),
     ("corpus/worked.calcium", 100.0),
+    ("corpus/uncertainty.calcium", 100.0),
 ];
 
 fn corpus_path(name: &str) -> std::path::PathBuf {

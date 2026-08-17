@@ -265,12 +265,38 @@ fn complex_sqrt(expr: &Expr) -> Option<Expr> {
     ])))
 }
 
+/// A monotone-increasing function applied to an interval endpoint-wise:
+/// `ln(1..e^2)` is `0..2`.
+fn monotone_interval(name: &str, arg: &Expr) -> Option<Expr> {
+    let Expr::Range(lo, hi) = arg else { return None };
+    let apply = |v: &Num| -> f64 {
+        let x = v.to_f64();
+        match name {
+            "exp" => x.exp(),
+            "ln" => x.ln(),
+            "log2" => x.log2(),
+            _ => x.log10(),
+        }
+    };
+    let (a, b) = (apply(lo.as_num()?), apply(hi.as_num()?));
+    if !a.is_finite() || !b.is_finite() {
+        return None;
+    }
+    Some(Expr::Range(
+        Box::new(float(a)),
+        Box::new(float(b)),
+    ))
+}
+
 fn call_unary(name: &str, arg: &Expr) -> Option<Expr> {
     // Trigonometry accepts an angle with units and returns a plain number.
     let trig = |f: fn(f64) -> f64| radians(arg).map(|v| float(f(v.to_f64())));
     // Rounding preserves how the argument was written, so the Reference's
     // `color = round(f*0xFF)` answers in hex.
     let radix = match arg {
+        // A sig-figs tag stops here: `round(2.5)` answers a plain 2, not
+        // one dressed in the argument's decimal places.
+        Expr::Num(_, Radix::Sig(_)) => Radix::Dec,
         Expr::Num(_, style) => *style,
         _ => Radix::Dec,
     };
@@ -286,6 +312,10 @@ fn call_unary(name: &str, arg: &Expr) -> Option<Expr> {
         "asin" => num_of(arg).map(|v| angle(Num::from_f64(v.to_f64().asin()))),
         "acos" => num_of(arg).map(|v| angle(Num::from_f64(v.to_f64().acos()))),
         "atan" => num_of(arg).map(|v| angle(Num::from_f64(v.to_f64().atan()))),
+        // The monotone functions extend to an interval endpoint-wise.
+        "exp" | "ln" | "log2" | "log10" if matches!(arg, Expr::Range(..)) => {
+            monotone_interval(name, arg)
+        }
         "exp" => num_of(arg).map(|v| float(v.to_f64().exp())),
         "ln" => num_of(arg).map(|v| float(v.to_f64().ln())),
         "log2" => num_of(arg).map(|v| float(v.to_f64().log2())),
@@ -762,6 +792,7 @@ fn apply_item(env: &Env, source: &Expr, binder: &Option<String>, item: &Expr, ct
         in_prelude: ctx.in_prelude,
         depth: ctx.depth,
         calls: ctx.calls,
+        pm: ctx.pm.clone(),
     };
     if let Some(binder) = binder {
         inner.locals.insert(binder.clone(), item.clone());
@@ -848,6 +879,7 @@ fn map(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
             in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
+            pm: ctx.pm.clone(),
         };
         for (arg, items) in &iterations {
             let binder = arg
@@ -940,6 +972,7 @@ fn reduce(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
             in_prelude: ctx.in_prelude,
             depth: ctx.depth,
             calls: ctx.calls,
+            pm: ctx.pm.clone(),
         };
         if let Some(name) = names.first() {
             inner.locals.insert(name.clone(), accumulator.clone());
@@ -1076,6 +1109,18 @@ pub fn differentiate(expr: &Expr, variable: &str) -> Expr {
                 ),
                 "exp" => expr.clone(),
                 "ln" => Expr::Pow(Box::new(inner.clone()), Box::new(Expr::num(-1))),
+                "log10" | "log2" => Expr::mul(vec![
+                    Expr::Pow(Box::new(inner.clone()), Box::new(Expr::num(-1))),
+                    Expr::Pow(
+                        Box::new(Expr::Call(
+                            "ln".to_string(),
+                            vec![Arg::positional(Expr::num(
+                                if name == "log10" { 10 } else { 2 },
+                            ))],
+                        )),
+                        Box::new(Expr::num(-1)),
+                    ),
+                ]),
                 "sqrt" | "√" => Expr::mul(vec![
                     Expr::Num(Num::ratio(1, 2), Radix::Dec),
                     Expr::Pow(
