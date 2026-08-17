@@ -216,11 +216,11 @@ fn write_bare(out: &mut String, expr: &Expr, fmt: &NumFormat) {
                 out.push_str(&text);
                 return;
             }
-            // `±` binds tighter than multiplication, so a side that is
-            // itself a product or sum must be parenthesized to read back.
-            write_expr(out, value, Prec::Pow, fmt);
+            // The unfused `±` reads like `+` and `-`, so each side may be a
+            // product but a sum needs its parentheses.
+            write_expr(out, value, Prec::Mul, fmt);
             out.push_str(" ± ");
-            write_expr(out, sigma, Prec::Pow, fmt);
+            write_expr(out, sigma, Prec::Mul, fmt);
         }
         Expr::Abs(inner) => {
             out.push('|');

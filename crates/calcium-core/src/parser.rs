@@ -361,6 +361,13 @@ impl Parser {
                 terms.push(self.term());
             } else if self.eat(&Tok::Minus) {
                 terms.push(Expr::neg(self.term()));
+            } else if self.eat(&Tok::PlusMinus) {
+                // A `±` not fused with a literal (see `primary`) reads like
+                // `+` and `-`: everything summed so far is the centre, and
+                // the next term is the sigma — `2*x ± dx` is (2x) ± dx.
+                let sigma = self.term();
+                let centre = Expr::add(std::mem::take(&mut terms));
+                terms.push(Expr::PlusMinus(Box::new(centre), Box::new(sigma)));
             } else {
                 break;
             }
@@ -392,7 +399,7 @@ impl Parser {
     /// Juxtaposition: `2x`, `100 ft`, `6.25 height`. Binds tighter than `*`
     /// and `/`, which is what makes `2x/3y` mean `(2x)/(3y)`.
     fn factor(&mut self) -> Expr {
-        let mut parts = vec![self.uncertainty()];
+        let mut parts = vec![self.unary()];
         loop {
             // `in` here is either the conversion keyword (stop) or the unit
             // "inches" (keep going).
@@ -407,22 +414,9 @@ impl Parser {
             if !self.starts_primary_now() {
                 break;
             }
-            parts.push(self.uncertainty());
+            parts.push(self.unary());
         }
         Expr::mul(parts)
-    }
-
-    /// `value ± sigma`, binding tighter than multiplication and
-    /// juxtaposition — `4 * 2 ± 0.1` scales the whole measurement and
-    /// `2 ± 0.1 mm` gives the uncertainty the unit — but looser than a
-    /// power, so `x^2 ± 0.1` keeps its square.
-    fn uncertainty(&mut self) -> Expr {
-        let lhs = self.unary();
-        if self.eat(&Tok::PlusMinus) {
-            let rhs = self.unary();
-            return Expr::PlusMinus(Box::new(lhs), Box::new(rhs));
-        }
-        lhs
     }
 
     /// Whether the cursor sits on something that continues a juxtaposition.

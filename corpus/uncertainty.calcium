@@ -75,6 +75,15 @@ measurement — no parentheses required.
     2 ± 0.1 mm   => (2 ± 0.1) mm
     2 ± 0.1 ^ 2  => 4 ± 0.4
 
+When `±` is not fused with a literal it reads like `+` and `-`: everything
+summed so far is the centre and the next term is the sigma.
+
+    x  = 12
+    dx = 0.25
+
+    x ± dx    => 12 ± 0.25
+    2*x ± dx  => 24 ± 0.25
+
 Uncertainties ride along with units, through arithmetic and conversions.
 
     current = 50 ± 1 mA

@@ -1328,6 +1328,17 @@ mod tests {
     }
 
     #[test]
+    fn unfused_plus_minus_reads_like_addition() {
+        let (env, _) = run(&["x = 12", "dx = 0.25"]);
+        let u = |src: &str| render(&env.eval_uncertain(&parse_expr(src)).unwrap());
+        assert_eq!(u("x ± dx"), "12 ± 0.25");
+        // Like `+`, the product to the left is the centre and the term to
+        // the right is the sigma.
+        assert_eq!(u("2*x ± dx"), "24 ± 0.25");
+        assert_eq!(u("x ± dx/2"), "12 ± 0.13");
+    }
+
+    #[test]
     fn certain_expressions_take_the_ordinary_path() {
         let (env, _) = run(&["x = 4"]);
         assert!(env.eval_uncertain(&parse_expr("x + 1")).is_none());
