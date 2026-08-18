@@ -507,6 +507,10 @@ pub struct LineInfo {
     pub redefines: Option<(usize, usize)>,
     /// Heading depth, for headings: the number of leading `#`, capped at 6.
     pub heading_level: Option<u8>,
+    /// For a continuation line, the line its block starts on. A block's lines
+    /// are one statement; an editor inserting a whole line — a directive —
+    /// must go above this line, not mid-block where it would splice in.
+    pub block_start: Option<usize>,
 }
 
 /// How each source line reads, with its comment, one entry per line.
@@ -540,6 +544,7 @@ pub fn line_info(source: &str) -> Vec<LineInfo> {
                     ),
                     _ => None,
                 },
+                block_start: None,
             }
         })
         .collect();
@@ -550,6 +555,11 @@ pub fn line_info(source: &str) -> Vec<LineInfo> {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let lines: Vec<&str> = source.lines().collect();
     for block in split_blocks(source) {
+        for offset in 1..block.lines.len() {
+            if let Some(slot) = infos.get_mut(block.line + offset) {
+                slot.block_start = Some(block.line);
+            }
+        }
         if block.kind != BlockKind::Code {
             continue;
         }
@@ -1117,6 +1127,19 @@ mod tests {
                 BlockKind::Prose,
             ]
         );
+    }
+
+    #[test]
+    fn continuation_lines_name_their_block_start() {
+        let source = [
+            "    monthly payment",                    // block start
+            "      = rate/(1 - (1 + rate)^(-n)) * f", // continuation
+            "      => 1",                             // continuation
+            "    x = 2",                              // its own block
+        ]
+        .join("\n");
+        let starts: Vec<_> = line_info(&source).iter().map(|l| l.block_start).collect();
+        assert_eq!(starts, vec![None, Some(0), Some(0), None]);
     }
 
     #[test]

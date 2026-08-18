@@ -93,12 +93,12 @@ inconsistent, which is the whole reason for carrying them:
     R1 = 220 Ω
     R2 = 330 Ω
 
-    parallel = 1/(1/R1 + 1/R2) => 132Ω
+    parallel = 1/(1/R1 + 1/R2) => 132 Ω
 
 Adding a third in parallel drops it further.
 
     R3 = 1000 Ω
-    three up = 1/(1/R1 + 1/R2 + 1/R3) => 116.6078Ω
+    three up = 1/(1/R1 + 1/R2 + 1/R3) => 116.6078 Ω
 
 
 ## How long is that download

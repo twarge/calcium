@@ -81,7 +81,12 @@ private final class ChromeView: NSView {
                 self.configuredWindow = window
                 self.chromeHidden = false
                 window.styleMask.insert(.fullSizeContentView)
-                window.titlebarAppearsTransparent = true
+                // Standard titlebar material, deliberately: the toolbar
+                // overlays the text, which shows through illegibly without it.
+                // `titlebarAppearsTransparent` also cannot survive this
+                // design — SwiftUI rebuilds the titlebar with its material
+                // on every reveal, so the transparent look held only from
+                // launch until the first hide/show cycle.
                 window.titlebarSeparatorStyle = .none
             }
             guard self.isEnabled else {

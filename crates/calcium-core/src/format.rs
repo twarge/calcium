@@ -7,8 +7,9 @@
 //!
 //! The spacing rules:
 //!
-//! * an alphabetic unit takes a space — `15 things`, `6.8889 miles/hour`
-//! * a symbolic one does not — `45°`, `80%`, `100Ω`, `2i`
+//! * an alphabetic unit takes a space — `15 things`, `6.8889 miles/hour`,
+//!   and a letter is a letter even when it looks like a symbol — `2 Ω`
+//! * a symbolic one does not — `45°`, `80%`, `2i`
 //! * some currency symbols lead instead of trail — `$1,550`, `¥5,406.8551`,
 //!   but `188,817.9015€`
 
@@ -467,14 +468,15 @@ fn split_sign(term: &Expr) -> (bool, Expr) {
 // ---------------------------------------------------------------------------
 
 /// True for names that attach directly to a number with no space: `2i`,
-/// `45°`, `80%`, `100Ω`.
+/// `45°`, `80%`. A letter — Latin or not — is a unit name and takes a
+/// space instead: `2 Ω`.
 fn is_tight_symbol(name: &str) -> bool {
     if name == "i" {
         return true;
     }
     let mut chars = name.chars();
     match (chars.next(), chars.next()) {
-        (Some(c), None) => !(c.is_alphabetic() && c.is_lowercase()) && !c.is_ascii_alphanumeric(),
+        (Some(c), None) => !c.is_alphabetic(),
         _ => false,
     }
 }
@@ -672,6 +674,7 @@ mod tests {
         assert_eq!(render(&parse_expr("45°")), "45°");
         assert_eq!(render(&parse_expr("80%")), "80%");
         assert_eq!(render(&parse_expr("2i")), "2i");
+        assert_eq!(render(&parse_expr("2Ω")), "2 Ω");
     }
 
     #[test]

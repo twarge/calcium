@@ -154,6 +154,10 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
             if let Some((offset, length)) = line.redefines {
                 json.push_str(&format!(",\"redefines\":[{offset},{length}]"));
             }
+            if let Some(start) = line.block_start {
+                json.push_str(",\"block\":");
+                json.push_str(&start.to_string());
+            }
             json.push('}');
         }
         json.push(']');
@@ -368,6 +372,18 @@ mod tests {
             "[{\"kind\":\"heading\",\"level\":1},\
               {\"kind\":\"code\",\"comment\":13,\"redefines\":[0,1]},\
               {\"kind\":\"prose\"}]"
+        );
+    }
+
+    #[test]
+    fn continuation_lines_report_their_block_start() {
+        // The editor inserts directives above `block`, never mid-statement.
+        let json = through(calcium_line_kinds, "    payment\n      = 1/3\n      =>");
+        assert_eq!(
+            json,
+            "[{\"kind\":\"code\"},\
+              {\"kind\":\"code\",\"block\":0},\
+              {\"kind\":\"code\",\"block\":0}]"
         );
     }
 

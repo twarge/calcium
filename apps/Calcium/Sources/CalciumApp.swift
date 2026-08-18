@@ -50,13 +50,6 @@ private struct FindCommands: View {
 #endif
 
 #if os(macOS)
-/// Removes the Format menu.
-///
-/// `CommandGroup(replacing: .textFormatting) {}` empties it, but SwiftUI
-/// offers no way to remove the menu itself, so an empty "Format" is left in
-/// the menu bar. It is deleted here at the AppKit level — and again whenever
-/// a window becomes main, because SwiftUI rebuilds the main menu as scenes
-/// come and go.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -64,26 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Calcium, and the selection comes back with its answers written
         // in — doc::rewrite as a system verb.
         NSApp.servicesProvider = ComputeService()
-        AppDelegate.removeFormatMenu()
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main
-        ) { _ in
-            // Window notifications arrive on the main thread.
-            MainActor.assumeIsolated { AppDelegate.removeFormatMenu() }
-        }
-    }
-
-    private static func removeFormatMenu() {
-        // Async: at the moment of the notification SwiftUI may not have
-        // finished rebuilding the menu it is about to hand us.
-        DispatchQueue.main.async {
-            guard let menu = NSApp.mainMenu else { return }
-            while let index = menu.items.firstIndex(where: {
-                $0.title == NSLocalizedString("Format", comment: "")
-            }) {
-                menu.removeItem(at: index)
-            }
-        }
     }
 }
 
@@ -154,9 +127,53 @@ struct CalciumApp: App {
         }
         .defaultSize(width: 900, height: 620)
         .commands {
-            // The format has no use for rich text, and these would only put
-            // characters in the buffer that the parser cannot read back.
-            CommandGroup(replacing: .textFormatting) {}
+            // The stock Format menu speaks rich text, which the parser cannot
+            // read back. This one speaks the document's own marks — Markdown
+            // emphasis on prose — and the engine's `@` directives, inserted
+            // above the calculation the caret is in.
+            CommandGroup(replacing: .textFormatting) {
+                Button("Bold") { CommandBus.shared.send(.toggleMark("**")) }
+                    .keyboardShortcut("b", modifiers: .command)
+                Button("Italic") { CommandBus.shared.send(.toggleMark("_")) }
+                    .keyboardShortcut("i", modifiers: .command)
+                Button("Code") { CommandBus.shared.send(.toggleMark("`")) }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                Button("Add Link") { CommandBus.shared.send(.insertLink) }
+                    .keyboardShortcut("k", modifiers: .command)
+                Divider()
+                Button("Heading 1") { CommandBus.shared.send(.heading(1)) }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+                Button("Heading 2") { CommandBus.shared.send(.heading(2)) }
+                    .keyboardShortcut("2", modifiers: [.command, .option])
+                Button("Heading 3") { CommandBus.shared.send(.heading(3)) }
+                    .keyboardShortcut("3", modifiers: [.command, .option])
+                Button("Blockquote") { CommandBus.shared.send(.blockquote) }
+                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                Divider()
+                // Each inserts the directive with its value selected, ready
+                // to be typed over. The default values are the engine's own.
+                Menu("Insert Directive") {
+                    Button("Precision") {
+                        CommandBus.shared.send(.insertDirective("@precision = 4"))
+                    }
+                    Button("Significant Figures") {
+                        CommandBus.shared.send(.insertDirective("@sigfigs"))
+                    }
+                    Button("Digit Grouping") {
+                        CommandBus.shared.send(.insertDirective("@group = false"))
+                    }
+                    Divider()
+                    Button("Point Decimal (1,234.5)") {
+                        CommandBus.shared.send(.insertDirective("@en-US"))
+                    }
+                    Button("Comma Decimal (1.234,5)") {
+                        CommandBus.shared.send(.insertDirective("@de-DE"))
+                    }
+                    Button("French Spacing (1 234,5)") {
+                        CommandBus.shared.send(.insertDirective("@fr-FR"))
+                    }
+                }
+            }
             #if os(macOS)
             CommandGroup(after: .pasteboard) {
                 FindCommands()

@@ -711,6 +711,18 @@ struct EditorView: NSViewRepresentable {
                         }
                         return removed > 0 ? trimmed : nil
                     }
+                case .toggleMark(let marker):
+                    self.toggleMark(marker, in: textView)
+                case .heading(let level):
+                    self.transformSelectedLines(textView) {
+                        self.toggledHeading($0, level: level)
+                    }
+                case .blockquote:
+                    self.transformSelectedLines(textView) { self.toggledQuote($0) }
+                case .insertLink:
+                    self.insertLink(in: textView)
+                case .insertDirective(let directive):
+                    self.insertDirective(directive, in: textView)
                 case .jump(let line):
                     self.jump(to: line, in: textView)
                 case .exportTypst:
@@ -729,22 +741,145 @@ struct EditorView: NSViewRepresentable {
 
         /// Puts the caret at the start of `line` and centres it.
         private func jump(to line: Int, in textView: NSTextView) {
-            let text = textView.string as NSString
-            var offset = 0
-            var index = 0
+            textView.window?.makeFirstResponder(textView)
+            textView.setSelectedRange(
+                NSRange(location: startOfLine(line, in: textView.string as NSString), length: 0))
+            textView.centerSelectionInVisibleArea(nil)
+        }
+
+        /// UTF-16 offset at which line `index` starts. Past the last real
+        /// line — the caret after a trailing newline — it is the text's end.
+        private func startOfLine(_ index: Int, in text: NSString) -> Int {
+            var offset = text.length
+            var line = 0
             text.enumerateSubstrings(
                 in: NSRange(location: 0, length: text.length),
                 options: [.byLines, .substringNotRequired]
             ) { _, range, _, stop in
-                if index == line {
+                if line == index {
                     offset = range.location
                     stop.pointee = true
                 }
-                index += 1
+                line += 1
             }
-            textView.window?.makeFirstResponder(textView)
-            textView.setSelectedRange(NSRange(location: offset, length: 0))
-            textView.centerSelectionInVisibleArea(nil)
+            return offset
+        }
+
+        // MARK: Formatting
+
+        /// One edit through the undo-registering path, then a fresh selection.
+        private func replace(
+            _ range: NSRange, with replacement: String,
+            in textView: NSTextView, thenSelect selection: NSRange
+        ) {
+            guard textView.shouldChangeText(in: range, replacementString: replacement)
+            else { return }
+            textView.textStorage?.replaceCharacters(in: range, with: replacement)
+            textView.didChangeText()
+            textView.setSelectedRange(selection)
+        }
+
+        /// Toggles a marker pair around the selection: wraps it, or unwraps
+        /// it when the marks are already there — selected along with the text
+        /// or sitting just outside it. An empty selection gets the pair with
+        /// the caret between, ready to type into.
+        private func toggleMark(_ marker: String, in textView: NSTextView) {
+            let text = textView.string as NSString
+            let mark = marker as NSString
+            let selection = textView.selectedRange()
+            let selected = text.substring(with: selection)
+
+            if selection.length >= 2 * mark.length,
+                selected.hasPrefix(marker), selected.hasSuffix(marker)
+            {
+                let inner = (selected as NSString).substring(
+                    with: NSRange(
+                        location: mark.length,
+                        length: selection.length - 2 * mark.length))
+                replace(
+                    selection, with: inner, in: textView,
+                    thenSelect: NSRange(
+                        location: selection.location, length: (inner as NSString).length))
+                return
+            }
+            let before = NSRange(location: selection.location - mark.length, length: mark.length)
+            let after = NSRange(location: NSMaxRange(selection), length: mark.length)
+            if before.location >= 0, NSMaxRange(after) <= text.length,
+                text.substring(with: before) == marker, text.substring(with: after) == marker
+            {
+                replace(
+                    NSRange(location: before.location, length: selection.length + 2 * mark.length),
+                    with: selected, in: textView,
+                    thenSelect: NSRange(location: before.location, length: selection.length))
+                return
+            }
+            replace(
+                selection, with: marker + selected + marker, in: textView,
+                thenSelect: NSRange(
+                    location: selection.location + mark.length, length: selection.length))
+        }
+
+        /// `[selection](https://)` with the URL selected, ready to be typed
+        /// over; an empty selection leaves the caret in the brackets instead.
+        private func insertLink(in textView: NSTextView) {
+            let text = textView.string as NSString
+            let selection = textView.selectedRange()
+            let title = text.substring(with: selection)
+            let target =
+                title.isEmpty
+                ? NSRange(location: selection.location + 1, length: 0)
+                : NSRange(
+                    location: selection.location + 1 + selection.length + 2,
+                    length: ("https://" as NSString).length)
+            replace(selection, with: "[\(title)](https://)", in: textView, thenSelect: target)
+        }
+
+        /// Inserts a directive line above the calculation the caret is in.
+        /// The engine names the block's first line: dropped mid-block, the
+        /// directive would be joined into that statement. The value, if the
+        /// directive has one, is left selected for typing over.
+        private func insertDirective(_ directive: String, in textView: NSTextView) {
+            let text = textView.string as NSString
+            let line = lineNumber(at: textView.selectedRange().location, in: text)
+            let lines = Engine.lines(of: textView.string)
+            let target = lines.indices.contains(line) ? (lines[line].block ?? line) : line
+            let start = startOfLine(target, in: text)
+            let targetLine = text.substring(with: text.lineRange(for: NSRange(location: start, length: 0)))
+            // Indented like the line it lands above; a directive needs the
+            // indent to read as a calculation, so prose gets the idiomatic
+            // four spaces.
+            var indent = String(targetLine.prefix { $0 == " " || $0 == "\t" })
+            if indent.isEmpty { indent = "    " }
+            let dir = directive as NSString
+            let head = start + (indent as NSString).length
+            let eq = dir.range(of: "= ")
+            let selection =
+                eq.location == NSNotFound
+                ? NSRange(location: head + dir.length, length: 0)
+                : NSRange(location: head + NSMaxRange(eq), length: dir.length - NSMaxRange(eq))
+            replace(
+                NSRange(location: start, length: 0), with: indent + directive + "\n",
+                in: textView, thenSelect: selection)
+        }
+
+        /// Sets, switches, or removes a `#` heading prefix. Only unindented
+        /// lines: an indented `#` is a comment, Toggle Comment's territory.
+        /// The same level again takes the heading off; blank lines pass.
+        private func toggledHeading(_ line: String, level: Int) -> String? {
+            guard let first = line.first, first != " ", first != "\t" else { return nil }
+            let existing = line.prefix { $0 == "#" }
+            let rest = line.dropFirst(existing.count).drop { $0 == " " }
+            if existing.count == level { return String(rest) }
+            return String(repeating: "#", count: level) + " " + rest
+        }
+
+        /// Adds or removes a leading `> `, at the very start even on an
+        /// indented line: that is what reads as a quote, and a quoted
+        /// calculation stops computing — which is what quoting is for.
+        private func toggledQuote(_ line: String) -> String? {
+            if line.hasPrefix("> ") { return String(line.dropFirst(2)) }
+            if line.hasPrefix(">") { return String(line.dropFirst(1)) }
+            return line.isEmpty ? nil : "> " + line
         }
 
         /// If the line is indented and stays one, comments or uncomments it.

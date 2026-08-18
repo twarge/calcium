@@ -23,6 +23,9 @@ struct LineInfo: Decodable {
     let redefines: [Int]?
     /// Heading depth, for headings: 1 for `#`, 2 for `##`, capped at 6.
     let level: Int?
+    /// For a continuation line, the line its block starts on. A whole-line
+    /// insertion — a directive — belongs above that line, not mid-statement.
+    let block: Int?
 }
 
 /// One coloured span within a source line, in UTF-16 units.

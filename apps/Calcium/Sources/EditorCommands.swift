@@ -8,6 +8,19 @@ enum EditorCommand {
     case indent
     case outdent
     case jump(line: Int)
+    /// Format > Bold/Italic/Code: the marker pair toggled around the
+    /// selection — `**`, `_`, or `` ` ``, as the prose styler draws them.
+    case toggleMark(String)
+    /// Format > Heading 1–3: the `#` prefix set, switched, or removed on
+    /// the selected lines.
+    case heading(Int)
+    /// Format > Blockquote: a leading `> ` toggled on the selected lines.
+    case blockquote
+    /// Format > Link: the selection wrapped as `[title](url)`.
+    case insertLink
+    /// Format > Insert Directive: a `@directive` line placed above the
+    /// calculation the caret is in.
+    case insertDirective(String)
     /// Preferences changed; restyle open documents.
     case preferencesChanged
     /// File > Export to Typst…, macOS only.
