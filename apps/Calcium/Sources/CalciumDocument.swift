@@ -82,19 +82,22 @@ struct CalciumDocument: FileDocument {
 
         Write math expressions and use `=>` to see the answer.
 
-            1 + 2 =>
+            1 + 2 => 3
 
-        Odd units!
+        Odd units:
 
             walking speed = 1 mph
             walking speed in furlongs/fortnight
-                =>
+                => 2,688 furlongs/fortnight
 
-        _Unknown_ units **cancel**!
+        Compute with uncertainty:
 
-            burrito length = 1 ft / burrito
-            burrito cost = 8 USD / burrito
-            1 mile / burrito length * burrito cost in kEUR =>
+            current = 2±0.1 mA
+            resistance = 10±2 Ω
+            voltage = current * resistance in mV
+                => (20 ± 4.1) mV
+
+        See the reference guide for more!
 
         """
 }
