@@ -342,7 +342,51 @@ fn mentions_uncertain(expr: &Expr, sigfigs: bool) -> bool {
 }
 
 const MAX_DEPTH: usize = 512;
-const MAX_CALLS: usize = 256;
+
+/// How deep function application may recurse. The bound is the *stack*, not
+/// patience: evaluation runs on whatever thread the embedding provides, and
+/// an overflow aborts the whole process. macOS gives secondary threads
+/// 512 KiB by default, where 200 levels of a release build already die; a
+/// debug build fits under 100 levels in the 2 MiB of a test thread. Each
+/// level is several evaluator frames, and they are not small. 64 holds
+/// everywhere with room to spare, and is still far beyond what a document
+/// plausibly recurses.
+const MAX_CALLS: usize = 64;
+
+/// Work budget for one answer: every `eval_in` call, `simplify` call, and
+/// rendered node burns one unit, and a dry tank turns the answer into an
+/// error instead of a frozen editor. `MAX_CALLS` bounds recursion *depth*, but a recursive
+/// definition whose base case never resolves (`if nn <= 1 ...`, a typo for
+/// `n`) stays within that bound while the symbolic result — and the cost of
+/// re-simplifying it on every unwind — keeps growing. Fuel is what bounds
+/// the total. The costliest corpus answer burns ~35k units; the runaway
+/// cases burn this whole budget in a fraction of a second.
+const FUEL_BUDGET: usize = 250_000;
+
+/// The answer shown when the budget runs out.
+pub(crate) const FUEL_ERROR: &str = "gave up: the computation kept growing";
+
+thread_local! {
+    /// Lives outside `Ctx` for the same reason as `solve::SOLVING`: the
+    /// engine's own machinery builds fresh contexts mid-evaluation, and the
+    /// budget has to survive them.
+    static FUEL: std::cell::Cell<usize> = const { std::cell::Cell::new(FUEL_BUDGET) };
+}
+
+/// Refills the tank. The document loop calls this before every statement, so
+/// one runaway answer cannot starve the rest of the document.
+pub fn refuel() {
+    FUEL.with(|fuel| fuel.set(FUEL_BUDGET));
+}
+
+/// Burns one unit; false once the tank is dry.
+pub(crate) fn spend_fuel() -> bool {
+    FUEL.with(|fuel| {
+        let left = fuel.get();
+        fuel.set(left.saturating_sub(1));
+        left > 0
+    })
+}
 
 /// The prelude, parsed once.
 ///
@@ -621,6 +665,9 @@ impl Env {
     pub fn eval_in(&self, expr: &Expr, ctx: &mut Ctx) -> Expr {
         if ctx.depth > MAX_DEPTH {
             return expr.clone();
+        }
+        if !spend_fuel() {
+            return Expr::Error(FUEL_ERROR.to_string());
         }
         ctx.depth += 1;
         let result = self.eval_inner(expr, ctx);
@@ -1427,5 +1474,20 @@ mod tests {
         assert!(e(&env, "$20 in eur").ends_with("eur") || e(&env, "$20 in eur").ends_with('€'));
         let (_, out) = run(&["$33 in ¥"]);
         assert!(out.contains('¥'), "expected a yen result, got {out}");
+    }
+
+    #[test]
+    fn a_recursion_whose_guard_cannot_resolve_runs_out_of_fuel() {
+        // `nn` for `n` — one typo'd character in the base case, so the guard
+        // never resolves and *both* recursive calls expand. MAX_CALLS bounds
+        // the depth, but a two-branch recursion doubles per level: the
+        // symbolic result is exponential, and only the fuel budget stands
+        // between a typo and a frozen editor. This test finishing at all is
+        // the regression check.
+        let source = "fib(n) = if nn < 2 then n else fib(n - 1) + fib(n - 2)\nfib(30) =>";
+        let document = crate::doc::evaluate(source);
+        assert_eq!(document.answers.len(), 1);
+        assert!(document.answers[0].is_error, "got {:?}", document.answers[0]);
+        assert_eq!(document.answers[0].text, FUEL_ERROR);
     }
 }

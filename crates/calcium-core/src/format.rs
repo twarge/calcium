@@ -78,6 +78,11 @@ pub fn render_with(expr: &Expr, fmt: &NumFormat) -> String {
 }
 
 fn write_expr(out: &mut String, expr: &Expr, parent: Prec, fmt: &NumFormat) {
+    // Rendering pays into the evaluation fuel budget: simplification renders
+    // subtrees as collection keys, and on a runaway symbolic result that is
+    // where the time actually goes. Burning per node makes fuel track real
+    // work; nothing here checks the tank, so the final answer always renders.
+    crate::eval::spend_fuel();
     let prec = precedence(expr);
     let needs_parens = prec < parent;
     if needs_parens {

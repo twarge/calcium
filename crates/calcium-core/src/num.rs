@@ -198,11 +198,15 @@ impl Num {
 
     /// Exponentiation, staying exact for integer exponents.
     pub fn pow(&self, other: &Num) -> Num {
+        // Zero to any negative power is a division by zero however the
+        // exponent is spelled — `0^-1` and `0^(-1/2)` alike. Guarding here
+        // covers every path below; `exact_root` in particular would otherwise
+        // take the reciprocal of zero.
+        if self.is_zero() && other.is_negative() {
+            return Num::infinity();
+        }
         if let (Num::Rat(base), Some(e)) = (self, other.to_i64()) {
             if e.unsigned_abs() <= 4096 {
-                if base.is_zero() && e < 0 {
-                    return Num::infinity();
-                }
                 let magnitude = num_traits::pow::pow(base.clone(), e.unsigned_abs() as usize);
                 return Num::Rat(if e < 0 {
                     magnitude.recip()
@@ -573,6 +577,15 @@ mod tests {
     fn division_by_zero_is_infinity() {
         assert_eq!(show(Num::from_i64(5).div(&Num::zero())), "Infinity");
         assert_eq!(show(Num::from_i64(-5).div(&Num::zero())), "-Infinity");
+    }
+
+    #[test]
+    fn zero_to_a_negative_power_is_infinite_however_spelled() {
+        // The integer spelling was always guarded; the fractional one used to
+        // reach exact_root and take the reciprocal of zero — a panic.
+        assert!(Num::from_i64(0).pow(&Num::from_i64(-1)).is_infinite());
+        assert!(Num::from_i64(0).pow(&Num::ratio(-1, 2)).is_infinite());
+        assert!(Num::from_i64(0).pow(&Num::from_f64(-0.25)).is_infinite());
     }
 
     #[test]

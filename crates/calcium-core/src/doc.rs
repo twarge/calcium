@@ -189,6 +189,9 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
         let mut arrow_index = 0;
 
         for statement in statements {
+            // A fresh work budget per statement: one runaway answer becomes
+            // an error while the rest of the document still evaluates.
+            crate::eval::refuel();
             let mut result: Option<Expr> = None;
 
             match &statement.stmt {

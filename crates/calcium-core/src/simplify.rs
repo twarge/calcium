@@ -16,6 +16,14 @@ use crate::num::Num;
 use std::collections::HashMap;
 
 pub fn simplify(expr: &Expr) -> Expr {
+    // Simplification is where runaway symbolic growth actually spends its
+    // time (re-rendering subtrees as collection keys), so it pays into the
+    // same fuel budget as evaluation. Dry means give the tree back untouched:
+    // unsimplified is a correct answer, and the evaluator's own fuel check
+    // turns the result into an error at the next opportunity.
+    if !crate::eval::spend_fuel() {
+        return expr.clone();
+    }
     match expr {
         Expr::Add(terms) => simplify_sum(terms),
         Expr::Mul(factors) => simplify_product(factors),

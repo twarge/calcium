@@ -18,6 +18,14 @@ use crate::num::Num;
 /// Words that never merge into a multi-word identifier.
 const KEYWORDS: &[&str] = &["if", "then", "else", "let", "in", "mod", "true", "false"];
 
+/// Expression nesting budget. A parenthesis level burns two units (one in
+/// `expr`, one in `unary`), so this allows ~64 levels of `(` — far beyond
+/// anything hand-written, but comfortably inside a 512 KiB stack, the macOS
+/// default for secondary threads, where ~150 levels of a release build
+/// overflow. Past the cap the parser answers with an error instead of
+/// overflowing the stack, which `catch_unwind` at the FFI cannot catch.
+const MAX_DEPTH: usize = 128;
+
 pub fn is_keyword(word: &str) -> bool {
     KEYWORDS.contains(&word)
 }
@@ -31,6 +39,8 @@ pub struct Parser {
     /// Inside the value part of `let name = value in body`, `in` terminates
     /// the value rather than introducing a conversion.
     in_let_value: usize,
+    /// Current expression nesting, checked against [`MAX_DEPTH`].
+    depth: usize,
 }
 
 /// Parses one logical line, which may hold several `;`-separated statements.
@@ -40,6 +50,7 @@ pub fn parse_line(src: &str) -> Vec<Statement> {
         pos: 0,
         in_abs: 0,
         in_let_value: 0,
+        depth: 0,
     }
     .statements()
 }
@@ -51,6 +62,7 @@ pub fn parse_expr(src: &str) -> Expr {
         pos: 0,
         in_abs: 0,
         in_let_value: 0,
+        depth: 0,
     };
     let expr = parser.expr();
     if !parser.at_end() {
@@ -277,8 +289,18 @@ impl Parser {
 
     // -- expressions --------------------------------------------------------
 
+    /// Every bracketing construct re-enters here, so this is where nesting
+    /// depth is charged. At the cap it consumes nothing and returns an error;
+    /// each caller either sees its closing delimiter missing or resynchronizes
+    /// at the statement level.
     fn expr(&mut self) -> Expr {
-        self.conversion()
+        if self.depth >= MAX_DEPTH {
+            return Expr::Error("nested too deeply".to_string());
+        }
+        self.depth += 1;
+        let expr = self.conversion();
+        self.depth -= 1;
+        expr
     }
 
     fn conversion(&mut self) -> Expr {
@@ -414,7 +436,14 @@ impl Parser {
             if !self.starts_primary_now() {
                 break;
             }
-            parts.push(self.unary());
+            // A depth-capped `unary` errors without consuming; pushing on
+            // regardless would loop here forever.
+            let before = self.pos;
+            let part = self.unary();
+            if self.pos == before {
+                break;
+            }
+            parts.push(part);
         }
         Expr::mul(parts)
     }
@@ -429,17 +458,24 @@ impl Parser {
         }
     }
 
+    /// Also charged against [`MAX_DEPTH`]: `-` chains and `^` towers recurse
+    /// through here without ever passing `expr`.
     fn unary(&mut self) -> Expr {
-        if self.eat(&Tok::Minus) {
-            return Expr::neg(self.unary());
+        if self.depth >= MAX_DEPTH {
+            return Expr::Error("nested too deeply".to_string());
         }
-        if self.eat(&Tok::Plus) {
-            return self.unary();
-        }
-        if self.eat(&Tok::Bang) {
-            return Expr::Not(Box::new(self.unary()));
-        }
-        self.power()
+        self.depth += 1;
+        let expr = if self.eat(&Tok::Minus) {
+            Expr::neg(self.unary())
+        } else if self.eat(&Tok::Plus) {
+            self.unary()
+        } else if self.eat(&Tok::Bang) {
+            Expr::Not(Box::new(self.unary()))
+        } else {
+            self.power()
+        };
+        self.depth -= 1;
+        expr
     }
 
     fn power(&mut self) -> Expr {
@@ -960,5 +996,24 @@ mod tests {
     fn let_bound_names_are_not_free() {
         let body = parse_expr("let x = point[0] in x * ca");
         assert_eq!(body.free_vars(), vec!["point", "ca"]);
+    }
+
+    #[test]
+    fn depth_capped_nesting_is_an_error_not_a_stack_overflow() {
+        // A stack overflow aborts the whole process — catch_unwind at the FFI
+        // cannot stop it — so the parser has to bound itself. 65,536 levels
+        // used to kill an 8 MiB stack; ~150 sufficed on a 512 KiB thread.
+        let deep = format!("{}1{}", "(".repeat(65_536), ")".repeat(65_536));
+        assert!(matches!(parse_expr(&deep), Expr::Error(_)));
+        assert!(matches!(parse_expr(&"(".repeat(65_536)), Expr::Error(_)));
+        // `-` chains and `^` towers recurse through `unary`, not `expr`.
+        let minus = format!("{}1", "-".repeat(65_536));
+        assert!(p(&minus).contains("nested too deeply"), "got {}", p(&minus));
+        let towers = "2^".repeat(65_536) + "2";
+        assert!(p(&towers).contains("nested too deeply"), "got {}", p(&towers));
+        // Nesting a person could plausibly write is untouched. A paren level
+        // burns two depth units, so 50 levels uses 100 of the 128.
+        let fine = format!("{}1{}", "(".repeat(50), ")".repeat(50));
+        assert_eq!(p(&fine), "1");
     }
 }
