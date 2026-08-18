@@ -163,6 +163,8 @@ pub struct Env {
     /// `2.0` means 2.00 ± 0.05 — propagated exactly like an explicit `±`,
     /// with results rounded where the uncertainty says the digits end.
     pub sigfigs: bool,
+    /// Context-free values of definitions already derived this generation.
+    cache: ValueCache,
 }
 
 /// Evaluation context: what is bound locally, what we are already inside of,
@@ -392,6 +394,146 @@ pub(crate) fn spend_fuel() -> bool {
     })
 }
 
+thread_local! {
+    /// Whether the evaluation in flight consulted the ambient locals frame.
+    /// A definition whose body did cannot be cached: the cache is keyed by
+    /// name alone, and locals vary between references. Lives outside `Ctx`
+    /// for the same reason as `FUEL`: the engine's own machinery builds
+    /// fresh contexts mid-evaluation, and the flag has to survive them.
+    /// `apply` discards its body's reads — its bindings come from arguments
+    /// whose own evaluation already reported to the caller's frame.
+    static FRAME_TAINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether it hit a truncation no frame absorbs — depth, fuel, the
+    /// recursion limit — leaving something other than the value the source
+    /// denotes. Poisons caching all the way up.
+    static HARD_TAINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Non-zero while evaluating under artificially suppressed names — the
+    /// solver's `eval_suppressing` — where a cached value could hand back a
+    /// suppressed name already folded in. The cache stands aside entirely.
+    static CACHE_OFF: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Names met while already being substituted, each tagged with the
+    /// expansion frame the reference sat in. A base unit is `s = s`: its own
+    /// body hits its own guard on every expansion, identically in every
+    /// context, so a frame absorbs hits on its own name made directly inside
+    /// it. What a frame cannot absorb — a hit on some *other* name, or on its
+    /// own through an intermediate expansion, both the signature of a cycle —
+    /// marks the value context-dependent, and it bubbles up uncached.
+    static ACTIVE_HITS: std::cell::RefCell<Vec<(String, u64)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// The innermost expansion frame in flight, 0 when none.
+    static FRAME_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static NEXT_FRAME_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// One name's expansion underway: `eval_var` unfolding a definition body, or
+/// `apply` running one against bindings.
+struct ExpansionFrame {
+    mark: usize,
+    id: u64,
+    parent: u64,
+}
+
+fn enter_frame() -> ExpansionFrame {
+    let id = NEXT_FRAME_ID.with(|next| {
+        let id = next.get() + 1;
+        next.set(id);
+        id
+    });
+    ExpansionFrame {
+        mark: ACTIVE_HITS.with(|hits| hits.borrow().len()),
+        id,
+        parent: FRAME_ID.with(|frame| frame.replace(id)),
+    }
+}
+
+/// Closes the frame, absorbing the hits that are its own name referencing
+/// itself directly. True when nothing context-dependent remains: every other
+/// hit is left for the frames above to fail on in turn.
+fn exit_frame(frame: ExpansionFrame, name: &str) -> bool {
+    FRAME_ID.with(|current| current.set(frame.parent));
+    ACTIVE_HITS.with(|hits| {
+        let mut hits = hits.borrow_mut();
+        let mut tail = hits.split_off(frame.mark);
+        tail.retain(|(hit, owner)| !(*owner == frame.id && hit == name));
+        let clean = tail.is_empty();
+        hits.append(&mut tail);
+        clean
+    })
+}
+
+/// A reference resolved symbolically because the name is being substituted
+/// somewhere above: remembered against the frame it happened in.
+fn record_active_hit(name: &str) {
+    ACTIVE_HITS.with(|hits| {
+        hits.borrow_mut()
+            .push((name.to_string(), FRAME_ID.with(|frame| frame.get())));
+    });
+}
+
+/// Clears the taint machinery between documents. Absorbed hits are removed as
+/// frames close, but a few paths leave residue by design — hits on suppressed
+/// or local names that no frame owns — and it should not outlive the
+/// evaluation that made it.
+pub(crate) fn reset_taints() {
+    FRAME_TAINT.with(|taint| taint.set(false));
+    HARD_TAINT.with(|taint| taint.set(false));
+    ACTIVE_HITS.with(|hits| hits.borrow_mut().clear());
+    FRAME_ID.with(|frame| frame.set(0));
+}
+
+/// Holds the cache aside for a dynamic extent, restoring on drop so a panic
+/// unwinding through the FFI guard cannot leave it off for the thread.
+struct CacheOffGuard;
+
+impl CacheOffGuard {
+    fn hold() -> CacheOffGuard {
+        CACHE_OFF.with(|off| off.set(off.get() + 1));
+        CacheOffGuard
+    }
+}
+
+impl Drop for CacheOffGuard {
+    fn drop(&mut self) {
+        CACHE_OFF.with(|off| off.set(off.get().saturating_sub(1)));
+    }
+}
+
+/// Evaluated definition bodies, so a name referenced two hundred times — an
+/// arrow line per reference, a plot sample per reference — derives its chain
+/// once. Keyed by name under each (expand_units, in_prelude) pair, since both
+/// change what a body evaluates to. Only values whose derivation touched
+/// nothing contextual are admitted; any redefinition clears the table.
+#[derive(Debug, Default)]
+struct ValueCache(std::sync::Mutex<[HashMap<String, Expr>; 4]>);
+
+/// A clone is a fresh environment about to diverge; it starts cold rather
+/// than share or copy answers.
+impl Clone for ValueCache {
+    fn clone(&self) -> ValueCache {
+        ValueCache::default()
+    }
+}
+
+impl ValueCache {
+    fn slot(ctx: &Ctx) -> usize {
+        (ctx.expand_units as usize) | ((ctx.in_prelude as usize) << 1)
+    }
+
+    fn get(&self, ctx: &Ctx, name: &str) -> Option<Expr> {
+        self.0.lock().unwrap()[Self::slot(ctx)].get(name).cloned()
+    }
+
+    fn put(&self, ctx: &Ctx, name: &str, value: Expr) {
+        self.0.lock().unwrap()[Self::slot(ctx)].insert(name.to_string(), value);
+    }
+
+    fn clear(&self) {
+        for slot in self.0.lock().unwrap().iter_mut() {
+            slot.clear();
+        }
+    }
+}
+
 /// The prelude, parsed once.
 ///
 /// It is four hundred definitions and it does not change, but a document is
@@ -460,6 +602,8 @@ impl Env {
     }
 
     pub fn insert(&mut self, name: String, def: Def) {
+        // Any value in the cache may have folded in the old definition.
+        self.cache.clear();
         if !self.defs.contains_key(&name) {
             self.order.push(name.clone());
         }
@@ -490,6 +634,7 @@ impl Env {
     /// `burrito = burrito`. Declared units get no SI prefixes — prefix
     /// resolution consults the prelude alone.
     pub fn declare_unit(&mut self, name: &str) {
+        self.cache.clear();
         self.declared_units.insert(name.to_string());
         match self.defs.get_mut(name) {
             Some(def) => def.is_unit = true,
@@ -506,6 +651,20 @@ impl Env {
         // The formatter's unit vocabulary keeps a meaningful coefficient of
         // one: a bare `burrito` answer prints as `1 burrito`.
         std::sync::Arc::make_mut(&mut self.fmt.units).insert(name.to_string());
+    }
+
+    /// Records a relation for the solver. The solution to any name can turn
+    /// on it, so derived values are dropped along with it.
+    pub fn push_equation(&mut self, lhs: Expr, rhs: Expr) {
+        self.cache.clear();
+        self.equations.push((lhs, rhs));
+    }
+
+    /// Forgets every derived value. Directives change how bodies evaluate —
+    /// `@sigfigs`, number formats — without touching a definition, so the
+    /// document loop calls this when it applies one.
+    pub fn clear_value_cache(&self) {
+        self.cache.clear();
     }
 
     pub fn get(&self, name: &str) -> Option<&Def> {
@@ -689,7 +848,20 @@ impl Env {
             active: suppressed.to_vec(),
             ..Ctx::default()
         };
-        simplify(&self.eval_in(expr, &mut ctx))
+        // A cached value may hold a suppressed name already folded in, which
+        // is exactly what suppression exists to prevent.
+        let _held = CacheOffGuard::hold();
+        let mark = ACTIVE_HITS.with(|hits| hits.borrow().len());
+        let result = simplify(&self.eval_in(expr, &mut ctx));
+        // Hits on the suppressed names have no frame to absorb them; they
+        // still count against any evaluation enclosing this one.
+        ACTIVE_HITS.with(|hits| {
+            let mut hits = hits.borrow_mut();
+            let mut tail = hits.split_off(mark);
+            tail.retain(|(hit, _)| !suppressed.contains(hit));
+            hits.append(&mut tail);
+        });
+        result
     }
 
     /// Evaluates with unit definitions expanded to base units.
@@ -703,9 +875,12 @@ impl Env {
 
     pub fn eval_in(&self, expr: &Expr, ctx: &mut Ctx) -> Expr {
         if ctx.depth > MAX_DEPTH {
+            // Truncated, not the value the expression denotes: uncacheable.
+            HARD_TAINT.with(|taint| taint.set(true));
             return expr.clone();
         }
         if !spend_fuel() {
+            HARD_TAINT.with(|taint| taint.set(true));
             return Expr::Error(FUEL_ERROR.to_string());
         }
         ctx.depth += 1;
@@ -885,6 +1060,9 @@ impl Env {
 
     fn eval_var(&self, name: &str, ctx: &mut Ctx) -> Expr {
         if let Some(value) = ctx.locals.get(name) {
+            // The result now depends on the frame, which varies between
+            // references to whatever definition is being expanded above.
+            FRAME_TAINT.with(|taint| taint.set(true));
             let value = value.clone();
             // Arguments were evaluated at the call site, where units stay
             // symbolic. Inside a conversion they have to come apart, so
@@ -900,6 +1078,7 @@ impl Env {
         // Already substituting this name: leave it symbolic. This is what
         // makes `r = r` and `A => A` declare a free symbol rather than hang.
         if ctx.active.iter().any(|n| n == name) {
+            record_active_hit(name);
             return Expr::var(name);
         }
         if matches!(name, "Infinity" | "∞") {
@@ -916,13 +1095,44 @@ impl Env {
             if def.is_unit && !ctx.expand_units {
                 return Expr::var(name);
             }
+            // Under `±` collection a body has to be walked for markers, and
+            // under suppression a cached value could smuggle a suppressed
+            // name back in — both stand the cache down.
+            let cacheable = ctx.pm.is_none() && CACHE_OFF.with(|off| off.get()) == 0;
+            if cacheable {
+                if let Some(value) = self.cache.get(ctx, name) {
+                    // A free variable of the value that is locally bound
+                    // right now would have been substituted by a fresh
+                    // evaluation; hand those back to the slow path.
+                    if ctx.locals.is_empty()
+                        || value
+                            .free_vars()
+                            .iter()
+                            .all(|free| !ctx.locals.contains_key(free))
+                    {
+                        return value;
+                    }
+                }
+            }
             let body = def.body.clone();
             let was_in_prelude = ctx.in_prelude;
             ctx.in_prelude = def.from_prelude;
             ctx.active.push(name.to_string());
+            let expansion = enter_frame();
+            let frame_before = FRAME_TAINT.with(|taint| taint.replace(false));
+            let hard_before = HARD_TAINT.with(|taint| taint.replace(false));
             let result = self.eval_in(&body, ctx);
+            let frame = FRAME_TAINT.with(|taint| taint.get());
+            let hard = HARD_TAINT.with(|taint| taint.get());
+            let cycle_free = exit_frame(expansion, name);
             ctx.active.pop();
             ctx.in_prelude = was_in_prelude;
+            // Context-free and complete: every later reference may reuse it.
+            if cacheable && !frame && !hard && cycle_free && !crate::doc::holds_error(&result) {
+                self.cache.put(ctx, name, result.clone());
+            }
+            FRAME_TAINT.with(|taint| taint.set(frame_before || frame));
+            HARD_TAINT.with(|taint| taint.set(hard_before || hard));
             return result;
         }
         if ctx.expand_units {
@@ -943,6 +1153,11 @@ impl Env {
         // A function passed by name: `H(data, p = pmax)` binds `p` to the
         // symbol `pmax`, and `p(ex)` inside the body must dispatch to it.
         if let Some(Expr::Var(target)) = ctx.locals.get(name).cloned() {
+            if target != name && ctx.active.iter().any(|n| n == &target) {
+                // The dispatch this would have made depends on what is
+                // being substituted above.
+                record_active_hit(&target);
+            }
             if target != name && !ctx.active.iter().any(|n| n == &target) {
                 let shadowed = ctx.locals.remove(name);
                 let result = self.eval_call(&target, args, ctx);
@@ -985,6 +1200,11 @@ impl Env {
             // reference is blocked by `active`, which is what makes `r = r`
             // declare a free symbol instead of hanging.
             let recursing = ctx.active.iter().any(|n| n == name);
+            if recursing {
+                // Whether the definition re-enters turns on what is active;
+                // the frame that pushed the name absorbs this.
+                record_active_hit(name);
+            }
             if !recursing || (!evaluated.is_empty() && ctx.calls < MAX_CALLS) {
                 let applied = self.apply(name, def, &evaluated, ctx);
                 // A self-definition (`r = r`, which just declares a symbol)
@@ -1002,6 +1222,9 @@ impl Env {
 
         // Calling an unknown name solves for it and applies the solution:
         // after `v = i * r`, `i(v = 200V, r = 100Ω)` answers `2 A`.
+        if ctx.active.iter().any(|n| n == name) {
+            record_active_hit(name);
+        }
         if !ctx.active.iter().any(|n| n == name) {
             ctx.active.push(name.to_string());
             let solution = crate::solve::solve_for(self, name);
@@ -1042,7 +1265,13 @@ impl Env {
             if params.is_empty() && args.iter().any(|a| a.name.is_none()) {
                 let saved = std::mem::take(&mut ctx.locals);
                 ctx.active.push(name.to_string());
+                // A fresh, empty frame: reads of locals installed within it
+                // are determined by the body, not by the caller's context.
+                let expansion = enter_frame();
+                let frame_before = FRAME_TAINT.with(|taint| taint.replace(false));
                 evaluated_value = self.eval_in(&def.body, ctx);
+                FRAME_TAINT.with(|taint| taint.set(frame_before));
+                exit_frame(expansion, name);
                 ctx.active.pop();
                 ctx.locals = saved;
                 params = evaluated_value
@@ -1073,11 +1302,19 @@ impl Env {
         ctx.locals = bindings;
         ctx.active.push(name.to_string());
         ctx.calls += 1;
+        // The bindings replace the frame wholesale, so the body's reads of
+        // them say nothing about the caller's context: the arguments were
+        // evaluated at the call site, where their reads already counted.
+        let expansion = enter_frame();
+        let frame_before = FRAME_TAINT.with(|taint| taint.replace(false));
         let result = if ctx.calls > MAX_CALLS {
+            HARD_TAINT.with(|taint| taint.set(true));
             Expr::Error(format!("{name} recursed too deeply"))
         } else {
             self.eval_in(body, ctx)
         };
+        FRAME_TAINT.with(|taint| taint.set(frame_before));
+        exit_frame(expansion, name);
         ctx.calls -= 1;
         ctx.active.pop();
         ctx.locals = saved;
@@ -1328,7 +1565,7 @@ mod tests {
                 match statement.stmt {
                     Stmt::Define { name, params, body } => env.define(&name, params, body),
                     Stmt::Expr(expr) => last = render(&env.eval(&expr)),
-                    Stmt::Equation { lhs, rhs } => env.equations.push((lhs, rhs)),
+                    Stmt::Equation { lhs, rhs } => env.push_equation(lhs, rhs),
                     _ => {}
                 }
             }

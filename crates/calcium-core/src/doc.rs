@@ -212,6 +212,8 @@ pub fn evaluate(source: &str) -> Document {
 }
 
 pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
+    // A fresh document should not inherit taint residue from the last one.
+    crate::eval::reset_taints();
     let blocks = split_blocks(source);
     let mut answers = Vec::new();
     let mut plots = Vec::new();
@@ -274,7 +276,7 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                     });
                 }
                 Stmt::Equation { lhs, rhs } => {
-                    env.equations.push((lhs.clone(), rhs.clone()));
+                    env.push_equation(lhs.clone(), rhs.clone());
                     if statement.arrow {
                         result = Some(env.eval(&Expr::Relation(
                             Box::new(lhs.clone()),
@@ -411,7 +413,7 @@ fn first_error(expr: &Expr) -> Option<String> {
 
 /// Whether an error is anywhere in the result, not just at the top. A nested
 /// error means the printed answer is not valid source text.
-fn holds_error(expr: &Expr) -> bool {
+pub(crate) fn holds_error(expr: &Expr) -> bool {
     match expr {
         Expr::Error(_) => true,
         Expr::Add(items) | Expr::Mul(items) => items.iter().any(holds_error),
@@ -438,6 +440,8 @@ fn arrow_lines(block: &Block) -> Vec<usize> {
 }
 
 fn apply_directive(env: &mut Env, name: &str, value: Option<&Expr>) {
+    // Directives change how bodies evaluate without touching a definition.
+    env.clear_value_cache();
     let key = name.trim_start_matches('@');
     match key {
         "precision" | "p" | "prec" => {
