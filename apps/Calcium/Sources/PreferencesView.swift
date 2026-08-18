@@ -5,10 +5,11 @@ import SwiftUI
 /// here needs the Settings app, and a document editor's options belong
 /// where the documents are.
 ///
-/// Only what is genuinely configurable app-wide: the type size, the faces
-/// and ligatures, completions, and — on the Mac — proofing and the title
-/// bar. Everything else the format itself decides per-document
-/// (`@precision`, `@group`) and does not belong in app-wide preferences.
+/// Only what is genuinely configurable app-wide, in two sections: Editor —
+/// the type size, faces and ligatures, completions, and on the Mac proofing
+/// and the title bar — and Colors. Everything else the format itself decides
+/// per-document (`@precision`, `@group`) and does not belong in app-wide
+/// preferences.
 struct PreferencesView: View {
     @AppStorage("baseFontSize") private var fontSize = 13.0
     @AppStorage("ligatures") private var ligatures = true
@@ -24,9 +25,10 @@ struct PreferencesView: View {
 
     var body: some View {
         #if os(macOS)
+        // A fixed window the form scrolls inside, rather than a window
+        // grown to the form's full height.
         form
-            .frame(width: 420)
-            .fixedSize()
+            .frame(width: 420, height: 560)
         #else
         form
         #endif
@@ -56,8 +58,24 @@ struct PreferencesView: View {
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                Toggle("Complete names while typing", isOn: $completions)
+                #if os(macOS)
+                // Proofing rides NSTextView's per-range checking; UIKit
+                // offers no equivalent gate, so iOS has no spelling to
+                // configure.
+                Group {
+                    Toggle("Check spelling in prose", isOn: $proseSpelling)
+                    Toggle("Correct spelling automatically", isOn: $proseAutocorrect)
+                        .disabled(!proseSpelling)
+                    Toggle("Hide the title bar until the pointer is over it", isOn: $hideTitleBar)
+                }
+                #endif
+                Toggle("Start new documents with the sample text", isOn: $starterText)
+                Text("Off means a new document opens empty.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             } header: {
-                Text("Type")
+                Text("Editor")
             }
 
             Section {
@@ -86,7 +104,7 @@ struct PreferencesView: View {
                     }
                 }
                 .id(paletteEdition)
-                Button("Use Designed Palette") {
+                Button("Default Palette") {
                     for role in ColorRole.allCases {
                         UserDefaults.standard.removeObject(forKey: role.key(dark: false))
                         UserDefaults.standard.removeObject(forKey: role.key(dark: true))
@@ -94,50 +112,8 @@ struct PreferencesView: View {
                     paletteEdition += 1
                     CommandBus.shared.send(.preferencesChanged)
                 }
-                Text("Each role in each theme, chart series included; open documents repaint as you pick.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             } header: {
                 Text("Colors")
-            }
-
-            Section {
-                Toggle("Complete names while typing", isOn: $completions)
-                Text("Suggestions with current values appear as you type a name in a calculation.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Completions")
-            }
-
-            #if os(macOS)
-            // Proofing rides NSTextView's per-range checking; UIKit offers
-            // no equivalent gate, so iOS has no spelling to configure.
-            Section {
-                Toggle("Check spelling in prose", isOn: $proseSpelling)
-                Toggle("Correct spelling automatically", isOn: $proseAutocorrect)
-                    .disabled(!proseSpelling)
-                Text("Sentences, headings, and comments are checked; calculations are never touched.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Proofing")
-            }
-
-            Section {
-                Toggle("Hide the title bar until the pointer is over it", isOn: $hideTitleBar)
-            } header: {
-                Text("Window")
-            }
-            #endif
-
-            Section {
-                Toggle("Start new documents with the sample text", isOn: $starterText)
-                Text("Off means a new document opens empty.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("New Documents")
             }
         }
         .formStyle(.grouped)
