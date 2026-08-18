@@ -726,12 +726,12 @@ impl Renderer {
         body
     }
 
-    /// One sampled plot as a lilaq diagram. Swept curves draw as bare
-    /// lines; literal data keeps its markers. Labels appear once there is
-    /// more than one series to tell apart, typeset through the same math
-    /// renderer as everything else.
+    /// One sampled plot as a lilaq diagram, centred on the page. Swept
+    /// curves draw as bare lines; literal data keeps its markers. Labels
+    /// appear once there is more than one series to tell apart, typeset
+    /// through the same math renderer as everything else.
     fn lilaq(&self, plot: &crate::plot::Plot) -> String {
-        let mut out = String::from("#lq.diagram(\n");
+        let mut out = String::from("#align(center, lq.diagram(\n");
         if let Some(x) = &plot.x_label {
             let math = self.expr(&parse_expr(x), Prec::Lowest);
             // The sweep's unit rides along in parentheses — `t (s)` — and
@@ -773,7 +773,7 @@ impl Renderer {
             }
             out.push_str("  ),\n");
         }
-        out.push(')');
+        out.push_str("))");
         out
     }
 
@@ -1431,7 +1431,10 @@ mod tests {
             out.contains("#import \"@preview/lilaq:0.6.0\" as lq"),
             "got:\n{out}"
         );
-        assert!(out.contains("#lq.diagram(\n  xlabel: $t$,"), "got:\n{out}");
+        assert!(
+            out.contains("#align(center, lq.diagram(\n  xlabel: $t$,"),
+            "got:\n{out}"
+        );
         assert!(out.contains("label: $sin(t)$"), "got:\n{out}");
         assert!(out.contains("label: $cos(t)$"), "got:\n{out}");
         assert!(out.contains("mark: none"), "got:\n{out}");
@@ -1442,7 +1445,7 @@ mod tests {
     #[test]
     fn data_plots_keep_their_markers() {
         let out = to_typst("    plot([3, 1, 4])\n");
-        assert!(out.contains("#lq.diagram("), "got:\n{out}");
+        assert!(out.contains("#align(center, lq.diagram("), "got:\n{out}");
         assert!(out.contains("(0, 1, 2)"), "got:\n{out}");
         assert!(out.contains("(3, 1, 4)"), "got:\n{out}");
         assert!(!out.contains("mark: none"), "got:\n{out}");
