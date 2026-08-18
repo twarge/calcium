@@ -69,6 +69,7 @@ struct EditorView: NSViewRepresentable {
         let coordinator = context.coordinator
         Task {
             coordinator.measureChromeInset(of: scrollView)
+            coordinator.observePlotReflow(of: textView)
             coordinator.refresh(textView)
         }
         return scrollView
@@ -133,6 +134,15 @@ struct EditorView: NSViewRepresentable {
         private var lastLines: [LineInfo] = []
         /// Where the answers currently sit, for styling.
         private var answerRegions: [(range: NSRange, isError: Bool)] = []
+        /// Sampled plots keyed by the line each belongs below, and the
+        /// chart views drawing them. The charts live as subviews of the
+        /// text view, inside gaps reserved with paragraph spacing, so the
+        /// text buffer itself never learns plots exist.
+        private var plotsByLine: [Int: PlotData] = [:]
+        private var plotViews: [Int: PlotChartView] = [:]
+        /// The text width the plots were last laid out against; reflow
+        /// moves lines, so a width change means repositioning.
+        private var plotLayoutWidth: CGFloat = 0
         /// The answer text last written to each line, so that deleting a `=>`
         /// can take its answer with it.
         private var lastAnswerByLine: [Int: String] = [:]
@@ -329,7 +339,7 @@ struct EditorView: NSViewRepresentable {
             case .prose:
                 textView.typingAttributes = [
                     .font: Typography.prose(scale),
-                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .foregroundColor: Palette.prose,
                 ]
             case .code:
                 textView.typingAttributes = [
@@ -699,9 +709,11 @@ struct EditorView: NSViewRepresentable {
                 case .toggleComment:
                     self.transformSelectedLines(textView) { self.toggledComment($0) }
                 case .indent:
-                    self.transformSelectedLines(textView) { $0.isEmpty ? nil : "    " + $0 }
+                    self.transformSelectedLines(textView, selectBlock: false) {
+                        $0.isEmpty ? nil : "    " + $0
+                    }
                 case .outdent:
-                    self.transformSelectedLines(textView) { line in
+                    self.transformSelectedLines(textView, selectBlock: false) { line in
                         if line.hasPrefix("\t") { return String(line.dropFirst()) }
                         var trimmed = line
                         var removed = 0
@@ -895,25 +907,59 @@ struct EditorView: NSViewRepresentable {
 
         /// Applies a per-line rewrite to every line the selection touches,
         /// as one edit through the undo-registering path. `nil` from the
-        /// transform leaves that line untouched.
+        /// transform leaves that line untouched. Marking transforms select
+        /// the whole block afterwards to show what changed; indentation
+        /// passes `selectBlock: false` and the selection instead rides with
+        /// the text it sat in.
         private func transformSelectedLines(
-            _ textView: NSTextView, _ transform: (String) -> String?
+            _ textView: NSTextView, selectBlock: Bool = true,
+            _ transform: (String) -> String?
         ) {
+            let selection = textView.selectedRange()
             let text = textView.string as NSString
-            let span = text.lineRange(for: textView.selectedRange())
+            let span = text.lineRange(for: selection)
             let block = text.substring(with: span)
             let endsWithNewline = block.hasSuffix("\n")
             var lines = block.components(separatedBy: "\n")
             if endsWithNewline { lines.removeLast() }
-            var replacement = lines.map { transform($0) ?? $0 }.joined(separator: "\n")
+            let rewritten = lines.map { transform($0) ?? $0 }
+            var replacement = rewritten.joined(separator: "\n")
             if endsWithNewline { replacement.append("\n") }
             guard replacement != block,
                   textView.shouldChangeText(in: span, replacementString: replacement)
             else { return }
             textView.textStorage?.replaceCharacters(in: span, with: replacement)
             textView.didChangeText()
-            let kept = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
-            textView.setSelectedRange(NSRange(location: span.location, length: max(0, kept)))
+            if selectBlock {
+                let kept = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
+                textView.setSelectedRange(NSRange(location: span.location, length: max(0, kept)))
+            } else {
+                let start = carried(selection.location, span: span, from: lines, to: rewritten)
+                let end = carried(NSMaxRange(selection), span: span, from: lines, to: rewritten)
+                textView.setSelectedRange(NSRange(location: start, length: max(0, end - start)))
+            }
+        }
+
+        /// Where a text offset lands after per-line rewrites: the same
+        /// column relative to the text that moved, so an indent carries the
+        /// caret four columns right, and an outdent that removes the very
+        /// space the caret sat in pins it to the line start.
+        private func carried(
+            _ offset: Int, span: NSRange, from old: [String], to new: [String]
+        ) -> Int {
+            var oldStart = span.location
+            var newStart = span.location
+            for (before, after) in zip(old, new) {
+                let oldLength = (before as NSString).length
+                let newLength = (after as NSString).length
+                if offset <= oldStart + oldLength {
+                    let column = offset - oldStart + newLength - oldLength
+                    return newStart + min(max(column, 0), newLength)
+                }
+                oldStart += oldLength + 1
+                newStart += newLength + 1
+            }
+            return newStart
         }
 
         // MARK: Value scrubbing
@@ -1012,6 +1058,14 @@ struct EditorView: NSViewRepresentable {
             // handed over as-is; no need to strip the previous answers first.
             let answers = Engine.evaluate(textView.string)
             splice(answers, into: textView)
+            // Plots, from the spliced text, before styling: `highlight`
+            // reserves their room and seats their views.
+            let source = textView.string
+            plotsByLine = source.contains("plot(")
+                ? Dictionary(
+                    Engine.plots(in: source).map { ($0.line, $0) },
+                    uniquingKeysWith: { first, _ in first })
+                : [:]
             let lines = Engine.lines(of: textView.string)
             highlight(textView, lines: lines)
             parent.text = textView.string
@@ -1173,12 +1227,146 @@ struct EditorView: NSViewRepresentable {
                 storage.addAttributes(
                     [
                         .foregroundColor: region.isError
-                            ? NSColor.systemRed : NSColor.secondaryLabelColor,
+                            ? NSColor.systemRed : Palette.answer,
                     ], range: region.range)
+            }
+            // Reserve each plot's gap: paragraph spacing below the plot's
+            // own line. `Styling.apply` resets attributes wholesale, so a
+            // vanished plot's spacing vanishes with it.
+            if !plotsByLine.isEmpty {
+                let text = storage.string as NSString
+                let lines = lineRanges(in: text)
+                for line in plotsByLine.keys where line < lines.count {
+                    let style = NSMutableParagraphStyle()
+                    style.paragraphSpacing = plotHeight + 2 * Self.plotPadding
+                    storage.addAttribute(
+                        .paragraphStyle, value: style, range: lines[line])
+                }
             }
             storage.endEditing()
             checkableRanges = checkable
             checkableTextLength = storage.length
+            layoutPlots(in: textView)
+        }
+
+        // MARK: Plots
+
+        static let plotPadding: CGFloat = 8
+
+        /// The chart height at type scale 1 — dragged by any chart's grip
+        /// and kept as a preference, so every chart shares one height and
+        /// nothing per-plot needs remembering.
+        static var chartBaseHeight: CGFloat {
+            get {
+                let stored = UserDefaults.standard.double(forKey: "PlotChartHeight")
+                return stored > 0 ? stored : 220
+            }
+            set { UserDefaults.standard.set(newValue, forKey: "PlotChartHeight") }
+        }
+
+        /// The chart's height, scaled with the type it sits amongst.
+        private var plotHeight: CGFloat {
+            Self.chartBaseHeight * min(max(scale, 0.5), 4)
+        }
+
+        /// The grip reports view points; store them back at scale 1 and
+        /// re-reserve every plot's gap to match.
+        private func chartResized(to height: CGFloat, in textView: NSTextView) {
+            let s = min(max(scale, 0.5), 4)
+            Self.chartBaseHeight = min(max(height / s, 100), 640)
+            guard let storage = textView.textStorage else { return }
+            let lines = lineRanges(in: storage.string as NSString)
+            storage.beginEditing()
+            for line in plotsByLine.keys where line < lines.count {
+                let style = NSMutableParagraphStyle()
+                style.paragraphSpacing = plotHeight + 2 * Self.plotPadding
+                storage.addAttribute(.paragraphStyle, value: style, range: lines[line])
+            }
+            storage.endEditing()
+            layoutPlots(in: textView)
+        }
+
+        /// Seats one chart view per plot line, inside the reserved gap.
+        /// Layout is asked per line, so charts land under their lines
+        /// wherever the wrap put them.
+        private func layoutPlots(in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer
+            else { return }
+            // Measure against finished layout: a narrowed window re-wraps
+            // the text, and rects asked for mid-reflow are stale — charts
+            // land over the text instead of inside their gaps.
+            layoutManager.ensureLayout(for: container)
+            plotLayoutWidth = textView.bounds.width
+            let text = textView.string as NSString
+            let lines = lineRanges(in: text)
+            var seated: Set<Int> = []
+            for (line, plot) in plotsByLine {
+                guard line < lines.count else { continue }
+                seated.insert(line)
+                let view: PlotChartView
+                if let existing = plotViews[line] {
+                    view = existing
+                } else {
+                    view = PlotChartView()
+                    view.onResize = { [weak self, weak textView] height in
+                        guard let self, let textView else { return }
+                        self.chartResized(to: height, in: textView)
+                    }
+                    plotViews[line] = view
+                    textView.addSubview(view)
+                }
+                let glyphs = layoutManager.glyphRange(
+                    forCharacterRange: lines[line], actualCharacterRange: nil)
+                let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+                let origin = textView.textContainerOrigin
+                let width = min(
+                    max(textView.bounds.width - 2 * origin.x - 16, 120), 640 * scale)
+                view.frame = CGRect(
+                    x: origin.x + 5,
+                    y: origin.y + rect.maxY + Self.plotPadding,
+                    width: width,
+                    height: plotHeight)
+                view.render(plot, scale: scale)
+            }
+            for (line, view) in plotViews where !seated.contains(line) {
+                view.removeFromSuperview()
+                plotViews[line] = nil
+            }
+        }
+
+        /// Reflow moves the lines the charts sit under; a width change is
+        /// the only resize that reflows.
+        private func textViewFrameChanged(_ textView: NSTextView) {
+            guard !plotsByLine.isEmpty, textView.bounds.width != plotLayoutWidth else { return }
+            layoutPlots(in: textView)
+            // The container finishes re-wrapping on its own schedule; one
+            // more pass after this turn seats the charts against the
+            // settled geometry.
+            let view = MainActorWeak(textView)
+            let this = MainActorWeak(self)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let textView = view.value, let coordinator = this.value else { return }
+                    coordinator.layoutPlots(in: textView)
+                }
+            }
+        }
+
+        private var plotFrameObservation: NSKeyValueObservation?
+
+        /// Watches the text view's frame, whose width changes on every
+        /// window resize; the same KVO shape as the chrome inset above.
+        func observePlotReflow(of textView: NSTextView) {
+            guard plotFrameObservation == nil else { return }
+            let view = MainActorWeak(textView)
+            let this = MainActorWeak(self)
+            plotFrameObservation = textView.observe(\.frame) { _, _ in
+                MainActor.assumeIsolated {
+                    guard let textView = view.value, let coordinator = this.value else { return }
+                    coordinator.textViewFrameChanged(textView)
+                }
+            }
         }
 
         /// Which line a character offset falls on.

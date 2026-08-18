@@ -74,6 +74,7 @@ struct EditorViewIOS: UIViewRepresentable {
             }
         }
         context.coordinator.installCommands(for: textView)
+        context.coordinator.observePlotReflow(of: textView)
         let coordinator = context.coordinator
         Task { coordinator.refresh(textView) }
         return textView
@@ -96,6 +97,13 @@ struct EditorViewIOS: UIViewRepresentable {
         private var isSplicing = false
         private var scheduled: Task<Void, Never>?
         private var statePersist: Task<Void, Never>?
+        /// Sampled plots keyed by the line each belongs below, their chart
+        /// views, and the width they were laid out against — the same
+        /// gap-and-subview model as the Mac editor.
+        private var plotsByLine: [Int: PlotData] = [:]
+        private var plotViews: [Int: PlotChartView] = [:]
+        private var plotLayoutWidth: CGFloat = 0
+        private var plotBoundsObservation: NSKeyValueObservation?
 
         init(_ parent: EditorViewIOS) {
             self.parent = parent
@@ -181,7 +189,7 @@ struct EditorViewIOS: UIViewRepresentable {
                 ]
             case .prose:
                 textView.typingAttributes = [
-                    .font: TypographyIOS.prose, .foregroundColor: UIColor.secondaryLabel,
+                    .font: TypographyIOS.prose, .foregroundColor: PaletteIOS.prose,
                 ]
             case .code:
                 textView.typingAttributes = [
@@ -344,6 +352,14 @@ struct EditorViewIOS: UIViewRepresentable {
             let started = CFAbsoluteTimeGetCurrent()
             let answers = Engine.evaluate(textView.text)
             splice(answers, into: textView)
+            // Plots, from the spliced text, before styling: `highlight`
+            // reserves their room and seats their views.
+            let source = textView.text ?? ""
+            plotsByLine = source.contains("plot(")
+                ? Dictionary(
+                    Engine.plots(in: source).map { ($0.line, $0) },
+                    uniquingKeysWith: { first, _ in first })
+                : [:]
             highlight(textView, lines: Engine.lines(of: textView.text))
             parent.text = textView.text
             evalCost = CFAbsoluteTimeGetCurrent() - started
@@ -603,9 +619,11 @@ struct EditorViewIOS: UIViewRepresentable {
                 case .toggleComment:
                     self.transformSelectedLines(textView) { self.toggledComment($0) }
                 case .indent:
-                    self.transformSelectedLines(textView) { $0.isEmpty ? nil : "    " + $0 }
+                    self.transformSelectedLines(textView, selectBlock: false) {
+                        $0.isEmpty ? nil : "    " + $0
+                    }
                 case .outdent:
-                    self.transformSelectedLines(textView) { line in
+                    self.transformSelectedLines(textView, selectBlock: false) { line in
                         if line.hasPrefix("\t") { return String(line.dropFirst()) }
                         var trimmed = line
                         var removed = 0
@@ -777,21 +795,52 @@ struct EditorViewIOS: UIViewRepresentable {
         }
 
         private func transformSelectedLines(
-            _ textView: UITextView, _ transform: (String) -> String?
+            _ textView: UITextView, selectBlock: Bool = true,
+            _ transform: (String) -> String?
         ) {
+            let selection = textView.selectedRange
             let text = textView.text as NSString
-            let span = text.lineRange(for: textView.selectedRange)
+            let span = text.lineRange(for: selection)
             let block = text.substring(with: span)
             let endsWithNewline = block.hasSuffix("\n")
             var lines = block.components(separatedBy: "\n")
             if endsWithNewline { lines.removeLast() }
-            var replacement = lines.map { transform($0) ?? $0 }.joined(separator: "\n")
+            let rewritten = lines.map { transform($0) ?? $0 }
+            var replacement = rewritten.joined(separator: "\n")
             if endsWithNewline { replacement.append("\n") }
             guard replacement != block else { return }
             textView.textStorage.replaceCharacters(in: span, with: replacement)
-            let kept = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
-            textView.selectedRange = NSRange(location: span.location, length: max(0, kept))
+            if selectBlock {
+                let kept = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
+                textView.selectedRange = NSRange(location: span.location, length: max(0, kept))
+            } else {
+                let start = carried(selection.location, span: span, from: lines, to: rewritten)
+                let end = carried(NSMaxRange(selection), span: span, from: lines, to: rewritten)
+                textView.selectedRange = NSRange(location: start, length: max(0, end - start))
+            }
             refresh(textView)
+        }
+
+        /// Where a text offset lands after per-line rewrites: the same
+        /// column relative to the text that moved, so an indent carries the
+        /// caret four columns right, and an outdent that removes the very
+        /// space the caret sat in pins it to the line start.
+        private func carried(
+            _ offset: Int, span: NSRange, from old: [String], to new: [String]
+        ) -> Int {
+            var oldStart = span.location
+            var newStart = span.location
+            for (before, after) in zip(old, new) {
+                let oldLength = (before as NSString).length
+                let newLength = (after as NSString).length
+                if offset <= oldStart + oldLength {
+                    let column = offset - oldStart + newLength - oldLength
+                    return newStart + min(max(column, 0), newLength)
+                }
+                oldStart += oldLength + 1
+                newStart += newLength + 1
+            }
+            return newStart
         }
 
         // MARK: Completions
@@ -881,7 +930,7 @@ struct EditorViewIOS: UIViewRepresentable {
                     storage.addAttributes(
                         [
                             .font: TypographyIOS.prose,
-                            .foregroundColor: UIColor.secondaryLabel,
+                            .foregroundColor: PaletteIOS.prose,
                         ], range: lineRange)
                     self.applyInlineMarkdown(storage, in: lineRange)
                 case .code:
@@ -931,11 +980,98 @@ struct EditorViewIOS: UIViewRepresentable {
             for region in answerRegions where NSMaxRange(region.range) <= storage.length {
                 storage.addAttribute(
                     .foregroundColor,
-                    value: region.isError ? UIColor.systemRed : UIColor.secondaryLabel,
+                    value: region.isError ? UIColor.systemRed : PaletteIOS.answer,
                     range: region.range)
+            }
+            // Reserve each plot's gap: paragraph spacing below the plot's
+            // own line. The wholesale attribute reset above clears a
+            // vanished plot's spacing with it.
+            if !plotsByLine.isEmpty {
+                let lineList = lineRanges(in: storage.string as NSString)
+                for line in plotsByLine.keys where line < lineList.count {
+                    let style = NSMutableParagraphStyle()
+                    style.paragraphSpacing = Self.plotHeight + 2 * Self.plotPadding
+                    storage.addAttribute(
+                        .paragraphStyle, value: style, range: lineList[line])
+                }
             }
             storage.endEditing()
             applyTypingAttributes(textView)
+            layoutPlots(in: textView)
+        }
+
+        // MARK: Plots (port of the Mac coordinator)
+
+        static let plotPadding: CGFloat = 8
+        static let plotHeight: CGFloat = 220
+
+        /// Seats one chart view per plot line, inside the reserved gap.
+        private func layoutPlots(in textView: UITextView) {
+            // Measure against finished layout: a width change re-wraps the
+            // text, and rects asked for mid-reflow seat charts over the
+            // text instead of inside their gaps.
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            plotLayoutWidth = textView.bounds.width
+            let text = textView.text as NSString
+            let lines = lineRanges(in: text)
+            var seated: Set<Int> = []
+            for (line, plot) in plotsByLine {
+                guard line < lines.count else { continue }
+                seated.insert(line)
+                let view: PlotChartView
+                if let existing = plotViews[line] {
+                    view = existing
+                } else {
+                    view = PlotChartView(frame: .zero)
+                    plotViews[line] = view
+                    textView.addSubview(view)
+                }
+                let glyphs = textView.layoutManager.glyphRange(
+                    forCharacterRange: lines[line], actualCharacterRange: nil)
+                let rect = textView.layoutManager.boundingRect(
+                    forGlyphRange: glyphs, in: textView.textContainer)
+                let inset = textView.textContainerInset
+                let width = min(
+                    max(textView.bounds.width - inset.left - inset.right - 16, 120), 640)
+                view.frame = CGRect(
+                    x: inset.left + textView.textContainer.lineFragmentPadding,
+                    y: inset.top + rect.maxY + Self.plotPadding,
+                    width: width,
+                    height: Self.plotHeight)
+                view.render(plot, scale: 1)
+            }
+            for (line, view) in plotViews where !seated.contains(line) {
+                view.removeFromSuperview()
+                plotViews[line] = nil
+            }
+        }
+
+        /// Rotation and split-view changes reflow the text the charts sit
+        /// under. Bounds also move on every scroll, so only a width change
+        /// relays them out.
+        func observePlotReflow(of textView: UITextView) {
+            guard plotBoundsObservation == nil else { return }
+            let view = MainActorWeak(textView)
+            let this = MainActorWeak(self)
+            plotBoundsObservation = textView.observe(\.bounds) { _, _ in
+                MainActor.assumeIsolated {
+                    guard let textView = view.value, let coordinator = this.value,
+                          !coordinator.plotsByLine.isEmpty,
+                          textView.bounds.width != coordinator.plotLayoutWidth
+                    else { return }
+                    coordinator.layoutPlots(in: textView)
+                    // The container finishes re-wrapping on its own
+                    // schedule; one more pass after this turn seats the
+                    // charts against the settled geometry.
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard let textView = view.value, let coordinator = this.value
+                            else { return }
+                            coordinator.layoutPlots(in: textView)
+                        }
+                    }
+                }
+            }
         }
 
         // MARK: Line geometry
@@ -1014,26 +1150,49 @@ enum TypographyIOS {
 }
 
 enum PaletteIOS {
-    static var comment: UIColor {
+    /// A role's colour: the user's preference when one is set, the
+    /// designed palette otherwise, resolved per trait collection so both
+    /// themes read from their own column.
+    static func color(_ role: ColorRole) -> UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.46, green: 0.55, blue: 0.66, alpha: 1)
-                : UIColor(red: 0.38, green: 0.47, blue: 0.58, alpha: 1)
+            UIColor(hex: role.hex(dark: traits.userInterfaceStyle == .dark)) ?? .label
         }
     }
+
+    static var comment: UIColor { color(.comment) }
+    static var prose: UIColor { color(.prose) }
+    static var answer: UIColor { color(.answer) }
+
+    /// The chart series cycle, resolved like every other role.
+    static var series: [UIColor] { ColorRole.series.map(color) }
 
     /// Code colours by token class, matching the Mac palette.
     static func token(_ class: TokenSpan.Class) -> UIColor? {
         switch `class` {
-        case .num: .systemBlue
-        case .str: .systemBrown
-        case .kw: .systemPurple
-        case .fn: .systemPink
-        case .def: .systemTeal
-        case .dir: .systemPurple
+        case .num: color(.number)
+        case .str: color(.string)
+        case .kw, .dir: color(.keyword)
+        case .fn: color(.function)
+        case .def: color(.definition)
         case .op: .secondaryLabel
-        case .name: nil
+        case .name: color(.variable)
         }
+    }
+}
+
+extension UIColor {
+    /// `#RRGGBB`, the spelling the palette and the preferences share.
+    convenience init?(hex: String) {
+        var value: UInt64 = 0
+        let text = hex.dropFirst(hex.hasPrefix("#") ? 1 : 0)
+        guard text.count == 6, Scanner(string: String(text)).scanHexInt64(&value) else {
+            return nil
+        }
+        self.init(
+            red: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1)
     }
 }
 #endif

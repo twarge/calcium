@@ -47,6 +47,99 @@ struct Completion: Decodable, Equatable {
     let doc: Bool
 }
 
+/// One sampled `plot(...)`, positioned below the source line it sits on.
+/// The engine has already swept the expressions; what arrives here is
+/// nothing but labeled series of finite points, ready to draw.
+struct PlotData: Decodable, Equatable {
+    struct Series: Decodable, Equatable {
+        /// The argument as the document wrote it, for the legend.
+        let label: String
+        /// A dense sampled curve, as opposed to literal data worth marking.
+        let swept: Bool
+        /// `[x, y]` pairs; a missing sample is a gap in the curve.
+        let points: [[Double]]
+    }
+    let line: Int
+    /// The swept variable, when one exists — the x-axis label.
+    let x: String?
+    /// The unit the sweep carried — `s` for a `0..1.5s` domain — so the
+    /// axis reads `t (s)`.
+    let xUnit: String?
+    /// The unit an `in` conversion asked the series be expressed in —
+    /// `pA` for `plot(i(t) in pA, ...)` — shown on the vertical axis.
+    let yUnit: String?
+    let series: [Series]
+}
+
+/// The colourable roles of a document, shared by the styling passes on
+/// both platforms and by the preferences that edit them. Raw values name
+/// the UserDefaults keys: `color.variable.light` holds a `#RRGGBB`
+/// override, and absence means the designed palette.
+enum ColorRole: String, CaseIterable {
+    case prose, variable, answer, number, string, keyword, function, definition, comment
+    case series1, series2, series3, series4, series5, series6
+
+    /// The text roles, as the Colors preferences list them.
+    static var text: [ColorRole] { allCases.filter { !$0.isSeries } }
+    /// The chart series cycle, in drawing order.
+    static var series: [ColorRole] { allCases.filter(\.isSeries) }
+    var isSeries: Bool { rawValue.hasPrefix("series") }
+
+    var label: String {
+        switch self {
+        case .prose: "Prose"
+        case .variable: "Variables"
+        case .answer: "Results"
+        case .number: "Numbers"
+        case .string: "Strings"
+        case .keyword: "Keywords"
+        case .function: "Functions"
+        case .definition: "Definitions"
+        case .comment: "Comments"
+        case .series1: "Series 1"
+        case .series2: "Series 2"
+        case .series3: "Series 3"
+        case .series4: "Series 4"
+        case .series5: "Series 5"
+        case .series6: "Series 6"
+        }
+    }
+
+    /// The designed palette: earthy inks on paper — olive variables, teal
+    /// definitions, indigo results, violet keywords, sage functions, brick
+    /// strings, ochre numbers, slate comments — and pastels on dark, where
+    /// the same roles lighten to cream, ice, mint and apricot.
+    var defaultHex: (light: String, dark: String) {
+        switch self {
+        case .prose: ("#1D1D1F", "#EDF4FF")
+        case .variable: ("#606D27", "#FFF2BB")
+        case .answer: ("#3D4BA2", "#8E9CE2")
+        case .number: ("#936C22", "#FBD082")
+        case .string: ("#8A4C49", "#FFA026")
+        case .keyword: ("#6944BA", "#C8B0FF")
+        case .function: ("#6A9B7E", "#D6FFB8")
+        case .definition: ("#346F7D", "#C2F5FF")
+        case .comment: ("#5F6F81", "#798BA5")
+        // The chart cycle wears the same inks, at line strength: indigo,
+        // ochre, sage, brick, violet, slate — pastel on dark like the text.
+        case .series1: ("#3D4BA2", "#8E9CE2")
+        case .series2: ("#B0761F", "#FBD082")
+        case .series3: ("#3E8E5B", "#D6FFB8")
+        case .series4: ("#A04A45", "#FFA026")
+        case .series5: ("#6944BA", "#C8B0FF")
+        case .series6: ("#5F6F81", "#798BA5")
+        }
+    }
+
+    func key(dark: Bool) -> String { "color.\(rawValue).\(dark ? "dark" : "light")" }
+
+    /// The hex in force: the user's override, or the designed default.
+    func hex(dark: Bool) -> String {
+        UserDefaults.standard.string(forKey: key(dark: dark))
+            ?? (dark ? defaultHex.dark : defaultHex.light)
+    }
+}
+
 /// The Rust engine, behind a Swift-shaped door.
 ///
 /// The whole interface is `String -> String`, so there is no shared state to
@@ -101,6 +194,15 @@ enum Engine {
               let lines = try? JSONDecoder().decode([LineInfo].self, from: data)
         else { return [] }
         return lines
+    }
+
+    /// Every `plot(...)` in the document, sampled, in source order.
+    static func plots(in source: String) -> [PlotData] {
+        guard let json = call(calcium_plots, source),
+              let data = json.data(using: .utf8),
+              let plots = try? JSONDecoder().decode([PlotData].self, from: data)
+        else { return [] }
+        return plots
     }
 
     /// The document with answers written in after each `=>`. This is what goes

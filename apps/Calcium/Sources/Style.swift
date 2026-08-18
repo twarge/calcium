@@ -47,13 +47,13 @@ enum Styling {
                     range: lineRange)
                 checkable.append(lineRange)
             case .prose:
-                // Prose sits back a little so the calculations carry the
-                // page — and, by default, in the system's own face, so
-                // sentences read as sentences and code reads as code.
+                // Prose in the system's own face, so sentences read as
+                // sentences and code reads as code — full-strength in light,
+                // set back in dark where solid white would glare.
                 storage.addAttributes(
                     [
                         .font: Typography.prose(scale),
-                        .foregroundColor: NSColor.secondaryLabelColor,
+                        .foregroundColor: Palette.prose,
                     ], range: lineRange)
                 inlineMarkdown(storage, in: lineRange, scale: scale)
                 checkable.append(lineRange)
@@ -216,30 +216,51 @@ enum Styling {
 }
 
 enum Palette {
-    /// A slate grey-blue: clearly an aside, without the flatness of plain grey,
-    /// and distinct from the grey the answers use. Resolved per appearance so
-    /// it holds its weight in both themes.
-    static let comment = NSColor(name: "comment") { appearance in
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return dark
-            ? NSColor(srgbRed: 0.46, green: 0.55, blue: 0.66, alpha: 1)
-            : NSColor(srgbRed: 0.38, green: 0.47, blue: 0.58, alpha: 1)
+    /// A role's colour: the user's preference when one is set, the
+    /// designed palette otherwise. Resolved through a fresh dynamic
+    /// colour on every ask, so a preference edit repaints on the next
+    /// styling pass and a theme flip re-resolves on its own.
+    static func color(_ role: ColorRole) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: role.hex(dark: dark)) ?? .labelColor
+        }
     }
 
-    /// Code colours by token class, from the engine's own lexer. `nil` means
-    /// the default text colour — ordinary names stay quiet so the structure
-    /// (numbers, the defined name, keywords) is what carries colour.
+    static var comment: NSColor { color(.comment) }
+    static var prose: NSColor { color(.prose) }
+    static var answer: NSColor { color(.answer) }
+
+    /// The chart series cycle, resolved like every other role.
+    static var series: [NSColor] { ColorRole.series.map(color) }
+
+    /// Code colours by token class, from the engine's own lexer.
     static func token(_ class: TokenSpan.Class) -> NSColor? {
         switch `class` {
-        case .num: .systemBlue
-        case .str: .systemBrown
-        case .kw: .systemPurple
-        case .fn: .systemPink
-        case .def: .systemTeal
-        case .dir: .systemPurple
+        case .num: color(.number)
+        case .str: color(.string)
+        case .kw, .dir: color(.keyword)
+        case .fn: color(.function)
+        case .def: color(.definition)
         case .op: .secondaryLabelColor
-        case .name: nil
+        case .name: color(.variable)
         }
+    }
+}
+
+extension NSColor {
+    /// `#RRGGBB`, the spelling the palette and the preferences share.
+    convenience init?(hex: String) {
+        var value: UInt64 = 0
+        let text = hex.dropFirst(hex.hasPrefix("#") ? 1 : 0)
+        guard text.count == 6, Scanner(string: String(text)).scanHexInt64(&value) else {
+            return nil
+        }
+        self.init(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1)
     }
 }
 

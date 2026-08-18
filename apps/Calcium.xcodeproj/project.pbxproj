@@ -18,9 +18,11 @@
 		752070167198760C3F55E6C9 /* CalciumDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B7793ED420EEAAEEA4E8EC /* CalciumDocument.swift */; };
 		76A1C4E20D15B7F3A2E94C01 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A1C4E20D15B7F3A2E94C00 /* Intents.swift */; };
 		76A1C4E20D15B7F3A2E94C03 /* TypstExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A1C4E20D15B7F3A2E94C02 /* TypstExport.swift */; };
+		76A1C4E20D15B7F3A2E94C05 /* PlotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A1C4E20D15B7F3A2E94C04 /* PlotView.swift */; };
 		7B41F1E3E1B2C1075559FC6C /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9389DBEA4BA74E1CF10AC29E /* Engine.swift */; };
 		7BEA299FF13842AE8D7051BE /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9389DBEA4BA74E1CF10AC29E /* Engine.swift */; };
 		821FE479F5A096B02EF70574 /* DocumentViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A774C2CD8B95150858C4BB77 /* DocumentViewState.swift */; };
+		8E5D21C4B7F04A93C6E1D208 /* reference.calcium in Resources */ = {isa = PBXBuildFile; fileRef = 6C2E94D1A0B34F78E5C6A901 /* reference.calcium */; };
 		938728455A234C56BABD7990 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
 		9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */; };
 		B4584E42672F07800FBDE311 /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CF4355AF72CBB535F0DC31 /* EditorView.swift */; };
@@ -69,8 +71,10 @@
 		4E562C67F8599B8B0DAF92F4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5638946C47224D3FAC8F8864 /* CalciumQuickLook.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CalciumQuickLook.entitlements; sourceTree = "<group>"; };
 		5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		6C2E94D1A0B34F78E5C6A901 /* reference.calcium */ = {isa = PBXFileReference; lastKnownFileType = text; name = reference.calcium; path = ../corpus/reference.calcium; sourceTree = SOURCE_ROOT; };
 		76A1C4E20D15B7F3A2E94C00 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		76A1C4E20D15B7F3A2E94C02 /* TypstExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypstExport.swift; sourceTree = "<group>"; };
+		76A1C4E20D15B7F3A2E94C04 /* PlotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlotView.swift; sourceTree = "<group>"; };
 		9389DBEA4BA74E1CF10AC29E /* Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine.swift; sourceTree = "<group>"; };
 		A3E0F628FB14F0B714D42286 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Calcium/Resources/Fonts; sourceTree = SOURCE_ROOT; };
 		A3EB496566BB4AE3B94C9648 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -89,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				A3E0F628FB14F0B714D42286 /* Fonts */,
+				6C2E94D1A0B34F78E5C6A901 /* reference.calcium */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -128,6 +133,7 @@
 				9389DBEA4BA74E1CF10AC29E /* Engine.swift */,
 				76A1C4E20D15B7F3A2E94C00 /* Intents.swift */,
 				A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */,
+				76A1C4E20D15B7F3A2E94C04 /* PlotView.swift */,
 				5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */,
 				EA16E2D9294F46398448423F /* Style.swift */,
 				76A1C4E20D15B7F3A2E94C02 /* TypstExport.swift */,
@@ -244,6 +250,7 @@
 			files = (
 				E979B1CD599F11951850E890 /* Assets.xcassets in Resources */,
 				C1535F837EE16F3E50AA9E4C /* Fonts in Resources */,
+				8E5D21C4B7F04A93C6E1D208 /* reference.calcium in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,6 +333,7 @@
 				7B41F1E3E1B2C1075559FC6C /* Engine.swift in Sources */,
 				76A1C4E20D15B7F3A2E94C01 /* Intents.swift in Sources */,
 				CA83749043AAEF6606B54FA3 /* KeypadAccessory.swift in Sources */,
+				76A1C4E20D15B7F3A2E94C05 /* PlotView.swift in Sources */,
 				9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */,
 				C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */,
 				76A1C4E20D15B7F3A2E94C03 /* TypstExport.swift in Sources */,

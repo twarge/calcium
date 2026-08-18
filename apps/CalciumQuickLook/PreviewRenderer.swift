@@ -34,7 +34,7 @@ enum PreviewRenderer {
             guard length > 0 else { continue }
             styled.addAttribute(
                 .foregroundColor,
-                value: answer.error ? NSColor.systemRed : NSColor.secondaryLabelColor,
+                value: answer.error ? NSColor.systemRed : Palette.answer,
                 range: NSRange(location: afterArrow, length: length))
         }
         return styled

@@ -49,6 +49,50 @@ private struct FindCommands: View {
 }
 #endif
 
+/// The Help menu's one item: the language reference, opened in a Calcium
+/// window rather than handed to a browser. The reference *is* a Calcium
+/// document — the corpus file whose every `=>` the tests hold to — so the app
+/// is its natural viewer, and better than one: it opens as a new document, so
+/// any example can be poked at, and the bundled original is never touched.
+private struct ReferenceCommand: View {
+    #if os(macOS)
+    @Environment(\.newDocument) private var newDocument
+
+    var body: some View {
+        Button("Calcium Reference") {
+            guard
+                let url = Bundle.main.url(
+                    forResource: "reference", withExtension: "calcium"),
+                let text = try? String(contentsOf: url, encoding: .utf8)
+            else { return }
+            newDocument(CalciumDocument(text: text))
+        }
+    }
+    #else
+    var body: some View {
+        // `newDocument` does not exist on iOS. iPadOS 18's menu bar gets the
+        // system's own new-document affordance instead, seeded from a
+        // temporary copy of the bundled reference — which also proposes its
+        // filename, so the document arrives as "Calcium Reference".
+        if #available(iOS 18.0, *) {
+            NewDocumentButton("Calcium Reference", contentType: .calciumDocument) {
+                guard
+                    let bundled = Bundle.main.url(
+                        forResource: "reference", withExtension: "calcium")
+                else { return nil }
+                let directory = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("reference-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true)
+                let url = directory.appendingPathComponent("Calcium Reference.calcium")
+                try FileManager.default.copyItem(at: bundled, to: url)
+                return url
+            }
+        }
+    }
+    #endif
+}
+
 #if os(macOS)
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -125,7 +169,7 @@ struct CalciumApp: App {
         DocumentGroup(newDocument: CalciumDocument()) { file in
             ContentView(text: file.$document.text, fileURL: file.fileURL)
         }
-        .defaultSize(width: 900, height: 620)
+        .defaultSize(width: 450, height: 760)
         .commands {
             // The stock Format menu speaks rich text, which the parser cannot
             // read back. This one speaks the document's own marks — Markdown
@@ -157,7 +201,7 @@ struct CalciumApp: App {
                         CommandBus.shared.send(.insertDirective("@precision = 4"))
                     }
                     Button("Significant Figures") {
-                        CommandBus.shared.send(.insertDirective("@sigfigs"))
+                        CommandBus.shared.send(.insertDirective("@sigfigs = true"))
                     }
                     Button("Digit Grouping") {
                         CommandBus.shared.send(.insertDirective("@group = false"))
@@ -214,7 +258,7 @@ struct CalciumApp: App {
             }
             #endif
             CommandGroup(replacing: .help) {
-                Link("Calcium Reference", destination: URL(string: "https://github.com/twarge/calcium")!)
+                ReferenceCommand()
             }
         }
 
