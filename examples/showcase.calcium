@@ -69,6 +69,20 @@ Drop a penny from the Eiffel Tower:
     tip = 18% * party => $72.36
     total = party + tip => $474.36
 
+## Plots, like Calca
+
+A ringdown, drawn right below its line — two decay rates, one chart:
+
+    plot(exp(-t)*sin(4*2pi*t), exp(-3t)*sin(4*2pi*t), 0..2)
+
+Data plots too, against its index or as (x, y) pairs:
+
+    plot([3, 1, 4, 1, 5, 9, 2, 6])
+
+A parametric curve sweeps its variable and draws (x, y):
+
+    plot([cos(t), sin(t)], 0..2pi)
+
 ## And the rest
 
     factorial(n) = if n <= 1 then 1 else n * factorial(n - 1)

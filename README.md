@@ -30,12 +30,12 @@ tests/golden.rs         runs the corpus as a regression test
 
 ## Status
 
-170 unit tests, plus 365 end-to-end expectations in `corpus/`, all passing.
+201 unit tests, plus 366 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|
 | `corpus/tour.calcium` | 74 — a readable introduction to the language |
-| `corpus/reference.calcium` | 218 — systematic, one section per feature |
+| `corpus/reference.calcium` | 219 — systematic, one section per feature |
 | `corpus/worked.calcium` | 33 — realistic documents end to end |
 | `corpus/uncertainty.calcium` | 40 — intervals, `±` error propagation, `@sigfigs` |
 
@@ -302,8 +302,29 @@ between the two kinds with a `#!constants` / `#!units` marker, because a
 constant must fold into arithmetic wherever it appears while a unit must stay
 symbolic until an `in` conversion asks otherwise.
 
-**Not implemented.** `plot(...)` passes through untouched for a UI layer to
-pick up.
+**Plots follow Calca's format.** `plot(sin(5t * 2pi))` draws an expression in
+its free variable over the default range −1..1; a range as the last argument
+(`plot(sin(t), 0..2pi)`) or a named binding (`plot(x^2, x = 0..10)`) sets the
+domain; several arguments are several series on one chart; an array plots
+against its index and a two-column matrix is (x, y) data. Arrays steer the
+sampling too, Calca's way: a trailing array gives the exact x coordinates, so
+`plot(sin(x), [0, pi/4, pi/2])` evaluates at just those points and
+`plot(ys, xs)` pairs two arrays into (x, y) data; a two-entry array in a swept
+variable is a parametric curve — `plot([cos(t), sin(t)], 0..2pi)` draws the
+circle. A range can also sit behind a name (`span = 0..10`, `plot(f, span)`)
+or carry a unit — `plot(height of ball(t), 0..1.5s)` binds each sample as a
+quantity, `t = 0.37s`, so a formula written for dimensioned time keeps its
+dimensions. The engine samples —
+the same environment, the same line-by-line evaluation — and hands finite
+points to whoever is drawing: the Mac and iOS editors draw the chart inline
+below the plot's own line, and `calcium typst` typesets it as a
+[lilaq](https://lilaq.org) diagram. A sample that is not a real number — a
+pole, a symbolic leftover — is a gap in the curve, not an error. The axis
+names its unit — `t (s)` — everywhere the chart is drawn. On the Mac,
+dragging a chart's bottom edge resizes every chart (one height, kept as a
+preference), right-clicking one exports it as SVG or PDF, or its points as
+CSV, and dragging the chart itself carries it out of the window as an SVG
+file. A plain click on a chart still just places the caret.
 
 **`#?` resolves on-device.** Write `mass of earth = #?` and, where Apple
 Intelligence is available, the reply replaces the `#?` — through the ordinary

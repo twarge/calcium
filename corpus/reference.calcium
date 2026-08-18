@@ -1,12 +1,8 @@
 # Calcium reference
 
-Systematic coverage of the language, one section per feature. Every `=>` is a
-test; `cargo test` fails if any of them stops holding.
+Systematic coverage of the language, one section per feature. Every `=>` is a test; `cargo test` fails if any of them stops holding.
 
-Where a result could reasonably be printed more than one way, this file records
-the convention the engine actually follows: terms ordered by name with the
-constant last, units spaced unless they are symbols, and answers rounded to
-four decimal places unless `@precision` says otherwise.
+Where a result could reasonably be printed more than one way, this file records the convention the engine actually follows: terms ordered by name with the constant last, units spaced unless they are symbols, and answers rounded to four decimal places unless `@precision` says otherwise.
 
 
 ## Numbers
@@ -21,8 +17,7 @@ four decimal places unless `@precision` says otherwise.
 
 ### Exactness
 
-Values stay exact through arithmetic and are only rounded to be displayed, so
-long chains do not drift.
+Values stay exact through arithmetic and are only rounded to be displayed, so long chains do not drift.
 
     0.1 + 0.2       => 0.3
     1/3 * 3         => 1
@@ -66,8 +61,7 @@ long chains do not drift.
 
 ### Precedence
 
-Implicit multiplication binds more tightly than explicit multiplication or
-division. These two lines are genuinely different expressions.
+Implicit multiplication binds more tightly than explicit multiplication or division. These two lines are genuinely different expressions.
 
     a = 6
     b = 3
@@ -128,8 +122,7 @@ A name cannot contain the word `in`, which is reserved for conversions.
 
 ### Redefinition
 
-A definition holds an expression, not a snapshot, so redefining an input
-updates every answer that depends on it — including ones written earlier.
+A definition holds an expression, not a snapshot, so redefining an input updates every answer that depends on it — including ones written earlier.
 
     base   = 10
     scaled = base * 3 => 30
@@ -157,8 +150,7 @@ updates every answer that depends on it — including ones written earlier.
 
 ### Implied parameters
 
-A definition with no parameter list takes its variables in order of first
-appearance.
+A definition with no parameter list takes its variables in order of first appearance.
 
     line = slope * x + intercept
     line(2, 5) => intercept + 10
@@ -230,9 +222,7 @@ Units that cancel simply disappear; no conversion is needed.
 
 ### Temperature
 
-Conversion between scales that measure from different zeros is affine, which a
-unit definition cannot express, so the zero points live in the engine and are
-applied by `in`.
+Conversion between scales that measure from different zeros is affine, which a unit definition cannot express, so the zero points live in the engine and are applied by `in`.
 
     25 degC in K           => 298.15 K
     0 degC in K            => 273.15 K
@@ -240,16 +230,11 @@ applied by `in`.
     -40 degC in degF       => -40 degF
     300 K in degC          => 26.85 degC
 
-The *sizes* of the degrees are ordinary definitions, so a Celsius degree is a
-kelvin and heat capacities come out right:
+The *sizes* of the degrees are ordinary definitions, so a Celsius degree is a kelvin and heat capacities come out right:
 
     4.18 J/degC in J/K     => 4.18 J/K
 
-That is also the catch. Outside a conversion `degC` is a degree-sized unit, not
-a reading, so a difference of two temperatures converts as though it were
-absolute. `(30 degC - 20 degC) in K` answers `283.15 K`, not `10 K`. Telling
-the two apart would mean tracking absolute and relative quantities separately
-throughout the algebra.
+That is also the catch. Outside a conversion `degC` is a degree-sized unit, not a reading, so a difference of two temperatures converts as though it were absolute. `(30 degC - 20 degC) in K` answers `283.15 K`, not `10 K`. Telling the two apart would mean tracking absolute and relative quantities separately throughout the algebra.
 
 ### Pressure and gas density
 
@@ -261,8 +246,7 @@ throughout the algebra.
     1 amagat in 1/m^3      => 2.6868e25/m^3
     1 amg in 1/cm^3        => 2.6868e19/cm^3
 
-A conversion that lands on exactly one still prints the one: a bare `atm`
-reads as though the conversion failed.
+A conversion that lands on exactly one still prints the one: a bare `atm` reads as though the conversion failed.
 
 ### Magnetism, light and radiation
 
@@ -303,15 +287,13 @@ reads as though the conversion failed.
 
 ### Physical constants
 
-Spelled out in words, so they collide with nothing. `h` is the henry, `e` is
-Euler's number, and `k` is too useful as a variable to spend on Boltzmann.
+Spelled out in words, so they collide with nothing. `h` is the henry, `e` is Euler's number, and `k` is too useful as a variable to spend on Boltzmann.
 
     speed of light in m/s          => 299,792,458 m/s
     h in J*s                       => 6.6261e-34 J*s
     hbar in J*s                    => 1.0546e-34 J*s
 
-`h` is Planck's constant; the henry keeps the capital `H`, and `h` as a prefix
-is untouched.
+`h` is Planck's constant; the henry keeps the capital `H`, and `h` as a prefix is untouched.
 
     1 H in V*s/A                   => 1 V*s/A
     2 hPa in Pa                    => 200 Pa
@@ -352,9 +334,7 @@ Trigonometry accepts an angle carrying units and converts it for you.
 
 ### Declared units
 
-The unit table is not closed: `@unit` marks a name of your own as a unit, so
-it stays symbolic and keeps its coefficient of one. A definition then makes
-it a derived unit — it still stays whole until a conversion asks otherwise.
+The unit table is not closed: `@unit` marks a name of your own as a unit, so it stays symbolic and keeps its coefficient of one. A definition then makes it a derived unit — it still stays whole until a conversion asks otherwise.
 
     @unit = burrito
     burrito cost = 8 USD / burrito
@@ -447,8 +427,7 @@ Indices start at zero. A single index reads down the columns.
     3*(n + 2)       => 3 n + 6
     (x + 1)*(x - 1) => x^2 - 1
 
-Products of unlike sums are left factored rather than multiplied out, because
-expanding them would make the answer longer rather than shorter.
+Products of unlike sums are left factored rather than multiplied out, because expanding them would make the answer longer rather than shorter.
 
     (u + 1)*(u + 2) => (u + 1)*(u + 2)
 
@@ -473,8 +452,7 @@ expanding them would make the answer longer rather than shorter.
     p^2 + 2p - 8 = 0
     p => [-4, 2]
 
-When a variable cannot be isolated, the closest rearrangement is reported
-instead of an error.
+When a variable cannot be isolated, the closest rearrangement is reported instead of an error.
 
     k^3 + k = 9 + w
     k => k + k^3 == w + 9
@@ -512,12 +490,68 @@ A range doubles as a measurement with a tolerance.
     length^2       => 96.04..104.04
 
 
+## Plots
+
+A `plot(...)` line draws a chart below itself. The first name the document does not define becomes the horizontal axis, swept over -1..1 unless told otherwise. A sample that refuses to be a real number — a pole, a symbolic leftover — is a gap in the curve, not an error.
+
+    plot(v^3 - v)
+
+### The domain
+
+A range as the last argument sets the sweep, and naming it picks the variable as well. The range may also live behind a name.
+
+    plot(cos(w), 0..4pi)
+    plot(k^2 - 1, k = -3..3)
+
+    window = 2..6
+    plot(ln(q), window)
+
+A range written with units binds every sample as a quantity, and the axis label carries the unit: `t (s)`.
+
+    decay = 0.4/s
+    plot(9V * exp(-decay * t), 0..10s)
+
+### Several series
+
+Arguments before the range are separate curves on one chart. Defined functions sweep their own parameters, whatever they are named.
+
+    plot(sin(theta), sin(2theta), sin(3theta), 0..pi)
+
+    rise(p) = 2p
+    fade(q) = 1 - q^2
+    plot(rise, fade)
+
+### Data
+
+An array of numbers plots against its index, and a two-column matrix is (x, y) pairs.
+
+    plot([2, 3, 5, 7, 11])
+    plot([0, 3; 1, 5; 2, 4])
+
+A trailing array names the exact sample points instead of a sweep: what comes before it is evaluated at just those values and drawn as marks.
+
+    knots = map(n^2, 0..4) => [0, 1, 4, 9, 16]
+    plot(sqrt(k), knots)
+
+Two arrays plot one against the other, the last giving the x coordinates.
+
+    steps = map(n*pi/6, 0..24)
+    spiral xs = map(a/10 * cos(a), steps)
+    spiral ys = map(a/10 * sin(a), steps)
+    plot(spiral ys, spiral xs)
+
+### Parametric curves
+
+A two-entry array in a swept variable draws (x, y) as the parameter runs over the domain.
+
+    plot([cos(3u), sin(2u)], 0..2pi)
+
+
 ## Document structure
 
 ### Multi-line expressions
 
-An expression continues onto the next line as long as that line is indented
-further than the first.
+An expression continues onto the next line as long as that line is indented further than the first.
 
     long total
       = 100
@@ -539,10 +573,7 @@ Anything after a `#` is ignored.
 
 ## Shadowing
 
-A name you define wins over the built-in table wherever *you* use it — but the
-table's own internal references are resolved against the table itself. Defining
-`T` as a temperature does not reach inside `gauss = T/10000` and turn the tesla
-into degrees; magnetometry documents do exactly this.
+A name you define wins over the built-in table wherever *you* use it — but the table's own internal references are resolved against the table itself. Defining `T` as a temperature does not reach inside `gauss = T/10000` and turn the tesla into degrees; magnetometry documents do exactly this.
 
     T = 125 degC
     T in K             => 398.15 K
