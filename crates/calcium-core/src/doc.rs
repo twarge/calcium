@@ -102,12 +102,14 @@ fn indent_of(line: &str) -> usize {
 /// Decides whether a line is prose or a calculation.
 fn classify(line: &str) -> BlockKind {
     let trimmed = line.trim();
-    if trimmed.starts_with('#') && !trimmed.starts_with("#?") {
-        return BlockKind::Heading;
-    }
-    // Indented lines are code by fiat.
+    // Indented lines are code by fiat — before the heading test, because an
+    // indented `#` line is a commented-out calculation, not a heading.
+    // Headings live at the margin.
     if indent_of(line) > 0 {
         return BlockKind::Code;
+    }
+    if trimmed.starts_with('#') && !trimmed.starts_with("#?") {
+        return BlockKind::Heading;
     }
     // Markdown list items and link definitions are prose.
     if trimmed.starts_with("* ")
@@ -846,6 +848,17 @@ mod tests {
         assert_eq!(classify("1 + 2 * 3   => 7"), BlockKind::Code);
         assert_eq!(classify("* [Finance][]"), BlockKind::Prose);
         assert_eq!(classify("[markdown]: http://example.com"), BlockKind::Prose);
+    }
+
+    #[test]
+    fn an_indented_hash_line_is_a_comment_not_a_heading() {
+        // What Toggle Comment produces for a whole statement: code, with the
+        // comment starting at the `#`, and no heading anywhere in sight.
+        assert_eq!(classify("    # fuel price = 3.45"), BlockKind::Code);
+        let info = line_info("    # fuel price = 3.45");
+        assert_eq!(info[0].kind, BlockKind::Code);
+        assert_eq!(info[0].comment, Some(4));
+        assert_eq!(info[0].heading_level, None);
     }
 
     #[test]
