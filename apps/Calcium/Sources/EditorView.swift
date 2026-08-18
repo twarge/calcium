@@ -337,6 +337,12 @@ struct EditorView: NSViewRepresentable {
                     .foregroundColor: NSColor.labelColor,
                     .ligature: Typography.ligatures ? 1 : 0,
                 ]
+            case .raw:
+                textView.typingAttributes = [
+                    .font: Typography.body(scale),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .ligature: Typography.ligatures ? 1 : 0,
+                ]
             }
         }
 

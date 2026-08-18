@@ -83,6 +83,11 @@ enum Styling {
                                 length: NSMaxRange(lineRange) - start))
                     }
                 }
+            case .raw:
+                // A fence's verbatim markup: monospace like code, set back
+                // like prose, no token colours — the engine does not read it.
+                storage.addAttribute(
+                    .foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
             }
             // A redefined name gets a dotted orange underline: shadowing
             // the built-in table (`T = 125 degC` over the tesla) or an

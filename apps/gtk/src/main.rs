@@ -293,6 +293,11 @@ impl Editor {
                         }
                     }
                 }
+                BlockKind::Raw => {
+                    // A fence's verbatim markup: monospace, set back like a
+                    // comment, no token colours — the engine does not read it.
+                    self.tag_line("comment", index, 0, chars, line);
+                }
             }
         }
     }

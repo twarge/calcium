@@ -137,6 +137,7 @@ pub unsafe extern "C" fn calcium_line_kinds(source: *const c_char) -> *mut c_cha
                 doc::BlockKind::Heading => "\"heading\"",
                 doc::BlockKind::Code => "\"code\"",
                 doc::BlockKind::Prose => "\"prose\"",
+                doc::BlockKind::Raw => "\"raw\"",
             });
             if let Some(level) = line.heading_level {
                 json.push_str(",\"level\":");

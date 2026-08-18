@@ -9,7 +9,7 @@ struct Answer: Decodable, Equatable {
 }
 
 enum LineKind: String, Decodable {
-    case heading, code, prose
+    case heading, code, prose, raw
 }
 
 /// How one source line reads, as the engine sees it.

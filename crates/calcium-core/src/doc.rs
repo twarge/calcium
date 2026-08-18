@@ -4,6 +4,10 @@
 //! A document is Markdown in which some lines are calculations. The rule: an
 //! indented line is code; an unindented line is guessed at, and unindented text
 //! ending in sentence punctuation is prose.
+//!
+//! A Markdown fence — three backticks at the start of a line — opens a raw
+//! block that runs to the closing fence, blank lines and all. The engine
+//! never evaluates one; the Typst converter gives fences their meaning.
 
 use crate::ast::*;
 use crate::eval::{Ctx, Def, Env};
@@ -28,6 +32,10 @@ pub enum BlockKind {
     Prose,
     Heading,
     Code,
+    /// A fenced code block, fence lines included. Verbatim foreign text: the
+    /// engine skips it, and the Typst converter splices a `typst`-tagged
+    /// fence through as raw markup and typesets any other as a code listing.
+    Raw,
 }
 
 /// An answer to be shown after a `=>`.
@@ -58,6 +66,28 @@ pub fn split_blocks(source: &str) -> Vec<Block> {
             index += 1;
             continue;
         }
+        // A fence swallows everything to its closing fence — blank lines
+        // included — or to the end of the document, as Markdown has it.
+        if let Some(ticks) = fence_open(line) {
+            let start = index;
+            let mut collected = vec![line.to_string()];
+            index += 1;
+            while index < lines.len() {
+                let next = lines[index];
+                collected.push(next.to_string());
+                index += 1;
+                if fence_close(next, ticks) {
+                    break;
+                }
+            }
+            blocks.push(Block {
+                line: start,
+                lines: collected,
+                kind: BlockKind::Raw,
+            });
+            continue;
+        }
+
         let indent = indent_of(line);
         let kind = classify(line);
 
@@ -97,6 +127,24 @@ fn indent_of(line: &str) -> usize {
         .take_while(|c| c.is_whitespace())
         .map(|c| if c == '\t' { 4 } else { 1 })
         .sum()
+}
+
+/// The number of backticks opening a fence, if this line opens one: three or
+/// more at the start of an unindented line, with the info string after them.
+pub(crate) fn fence_open(line: &str) -> Option<usize> {
+    if !line.starts_with("```") {
+        return None;
+    }
+    Some(line.chars().take_while(|c| *c == '`').count())
+}
+
+/// Whether a line closes a fence of `ticks` backticks: at least as many, and
+/// nothing else on the line.
+pub(crate) fn fence_close(line: &str, ticks: usize) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().all(|c| c == '`')
+        && trimmed.chars().count() >= ticks
 }
 
 /// Decides whether a line is prose or a calculation.
@@ -258,7 +306,7 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                 // half-built expression it was found in.
                 let text = match first_error(&value) {
                     Some(message) => message,
-                    None => render_with(&value, &env.fmt),
+                    None => render_answer(&value, env),
                 };
                 answers.push(Answer {
                     line,
@@ -286,6 +334,47 @@ struct PendingSum {
 impl PendingSum {
     fn close(self, env: &mut Env) {
         env.define(&self.name, None, Expr::add(self.parts));
+    }
+}
+
+/// A value rendered the way an answer prints. One special case: a value
+/// that is nothing but units keeps an explicit coefficient — `1 kHz`, not
+/// the bare `kHz` canonicalization leaves behind — so a quantity of one
+/// reads as the quantity it is. Conversions render their own magnitude,
+/// hence the leading-digit check, and a pure reciprocal like `1/Hz`
+/// already leads with its 1.
+pub(crate) fn render_answer(value: &Expr, env: &Env) -> String {
+    let rendered = render_with(value, &env.fmt);
+    if is_pure_units(value, env)
+        && has_positive_unit(value)
+        && !rendered.starts_with(|c: char| c.is_ascii_digit())
+    {
+        return format!("1 {rendered}");
+    }
+    rendered
+}
+
+/// Whether a value is purely units: unit names, possibly under numeric
+/// powers, and nothing else.
+fn is_pure_units(expr: &Expr, env: &Env) -> bool {
+    match expr {
+        Expr::Var(name) => env.is_unit_name(name),
+        Expr::Pow(base, exp) => is_pure_units(base, env) && exp.as_num().is_some(),
+        Expr::Mul(factors) => {
+            !factors.is_empty() && factors.iter().all(|f| is_pure_units(f, env))
+        }
+        _ => false,
+    }
+}
+
+/// Whether any unit factor carries a positive exponent, so the rendered
+/// form has a numerator for the 1 to sit against.
+fn has_positive_unit(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(_) => true,
+        Expr::Pow(_, exp) => exp.as_num().map(|n| !n.is_negative()).unwrap_or(true),
+        Expr::Mul(factors) => factors.iter().any(has_positive_unit),
+        _ => false,
     }
 }
 
@@ -515,9 +604,14 @@ pub fn line_kinds(source: &str) -> Vec<BlockKind> {
 /// here rather than in the UI keeps one implementation of "which `=>` is real",
 /// including the rule that an arrow inside `inline code` is prose.
 pub fn strip_answers(source: &str) -> String {
+    let kinds = line_kinds(source);
     let mut out: Vec<String> = Vec::new();
-    for line in source.lines() {
-        if !crate::check::outside_code_spans(line).contains("=>") {
+    for (index, line) in source.lines().enumerate() {
+        // An arrow in a fence is verbatim foreign text — Typst writes its
+        // lambdas with `=>` — not an answer to strip.
+        if kinds.get(index) == Some(&BlockKind::Raw)
+            || !crate::check::outside_code_spans(line).contains("=>")
+        {
             out.push(line.to_string());
             continue;
         }
@@ -859,6 +953,60 @@ mod tests {
         assert_eq!(info[0].kind, BlockKind::Code);
         assert_eq!(info[0].comment, Some(4));
         assert_eq!(info[0].heading_level, None);
+    }
+
+    #[test]
+    fn a_unit_quantity_of_one_keeps_its_digit() {
+        let document = evaluate("    x = 1 kHz\n    x =>\n    y = 2 kHz\n    y =>\n");
+        assert_eq!(document.answers[0].text, "1 kHz");
+        assert_eq!(document.answers[1].text, "2 kHz");
+        // Mixed exponents too: the 1 sits against the numerator.
+        let document = evaluate("    n = 1 nA/sqrt(Hz)\n    n =>\n");
+        assert_eq!(document.answers[0].text, "1 nA/sqrt(Hz)");
+    }
+
+    #[test]
+    fn conversions_do_not_double_their_one() {
+        let document = evaluate("    1 J in N*m =>\n    1 N in kg*m/s^2 =>\n");
+        assert_eq!(document.answers[0].text, "1 N*m");
+        assert_eq!(document.answers[1].text, "1 kg*m/s^2");
+    }
+
+    #[test]
+    fn fences_read_raw_and_span_blank_lines() {
+        let source = "```typst\n#import \"@preview/zap:0.6.0\"\n\nx = 1\n```\nAfter.\n";
+        let blocks = split_blocks(source);
+        assert_eq!(blocks[0].kind, BlockKind::Raw);
+        assert_eq!(blocks[0].lines.len(), 5);
+        assert_eq!(blocks[1].kind, BlockKind::Prose);
+        assert_eq!(line_kinds(source)[..5], [BlockKind::Raw; 5]);
+        // Nothing in a fence evaluates: no answers, no definitions.
+        assert!(evaluate(source).answers.is_empty());
+    }
+
+    #[test]
+    fn an_unclosed_fence_runs_to_the_end_of_the_document() {
+        let blocks = split_blocks("```typst\nx = 1 => 1\n");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, BlockKind::Raw);
+        assert!(evaluate("```typst\nx = 1 => 1\n").answers.is_empty());
+    }
+
+    #[test]
+    fn a_longer_fence_holds_until_its_own_length_closes_it() {
+        let blocks = split_blocks("````typst\n```\nstill inside\n````\nOut.\n");
+        assert_eq!(blocks[0].kind, BlockKind::Raw);
+        assert_eq!(blocks[0].lines.len(), 4);
+        assert_eq!(blocks[1].kind, BlockKind::Prose);
+    }
+
+    #[test]
+    fn strip_answers_leaves_fence_arrows_alone() {
+        // Typst writes lambdas with `=>`; stripping one would eat its body.
+        let source = "```typst\n#let f = (x) => x + 1\n```\n    2 + 2 => 4\n";
+        let stripped = strip_answers(source);
+        assert!(stripped.contains("(x) => x + 1"), "got:\n{stripped}");
+        assert!(stripped.contains("2 + 2 =>\n"), "got:\n{stripped}");
     }
 
     #[test]

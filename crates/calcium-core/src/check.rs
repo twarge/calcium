@@ -23,8 +23,14 @@ pub struct Expectation {
 /// after them, and arrows inside `inline code`, which the prose uses when
 /// talking *about* the operator rather than applying it.
 pub fn expectations(source: &str) -> Vec<Expectation> {
+    let kinds = doc::line_kinds(source);
     let mut out = Vec::new();
     for (index, line) in source.lines().enumerate() {
+        // An arrow inside a fenced block is foreign text — a Typst lambda,
+        // not a worked example.
+        if kinds.get(index) == Some(&doc::BlockKind::Raw) {
+            continue;
+        }
         if !outside_code_spans(line).contains("=>") {
             continue;
         }
@@ -183,6 +189,14 @@ pub fn check_source(source: &str, verbose: bool) -> Report {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fence_arrows_are_not_expectations() {
+        let source = "```typst\n#let f = (x) => x + 1\n```\n    2 + 2 => 4\n";
+        let found = expectations(source);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].expected, "4");
+    }
 
     #[test]
     fn extracts_expectations_but_not_prose_about_the_operator() {

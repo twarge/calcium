@@ -188,6 +188,11 @@ struct EditorViewIOS: UIViewRepresentable {
                     .font: TypographyIOS.body, .foregroundColor: UIColor.label,
                     .ligature: TypographyIOS.ligatures ? 1 : 0,
                 ]
+            case .raw:
+                textView.typingAttributes = [
+                    .font: TypographyIOS.body, .foregroundColor: UIColor.secondaryLabel,
+                    .ligature: TypographyIOS.ligatures ? 1 : 0,
+                ]
             }
         }
 
@@ -749,6 +754,12 @@ struct EditorViewIOS: UIViewRepresentable {
                                 .foregroundColor, value: color, range: range)
                         }
                     }
+                case .raw:
+                    // A fence's verbatim markup: monospace like code, set
+                    // back like prose, no token colours — the engine does
+                    // not read it.
+                    storage.addAttribute(
+                        .foregroundColor, value: UIColor.secondaryLabel, range: lineRange)
                 }
                 if let mark = line?.redefines, mark.count == 2 {
                     let range = NSRange(location: lineRange.location + mark[0], length: mark[1])
