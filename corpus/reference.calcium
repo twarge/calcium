@@ -350,6 +350,22 @@ Trigonometry accepts an angle carrying units and converts it for you.
     120 * 5%    => 6
     1/4 in %    => 25%
 
+### Declared units
+
+The unit table is not closed: `@unit` marks a name of your own as a unit, so
+it stays symbolic and keeps its coefficient of one. A definition then makes
+it a derived unit — it still stays whole until a conversion asks otherwise.
+
+    @unit = burrito
+    burrito cost = 8 USD / burrito
+    3 burrito * burrito cost => $24
+    burrito                  => 1 burrito
+
+    @unit = pallet
+    pallet = 500 kg
+    3 pallet        => 3 pallet
+    3 pallet in kg  => 1,500 kg
+
 
 ## Collections
 

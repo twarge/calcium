@@ -43,6 +43,13 @@ pub fn evaluate_or_solve(env: &Env, expr: &Expr) -> Expr {
     if !matches!(&evaluated, Expr::Var(other) if other == name) {
         return evaluated;
     }
+    // A name the document declared with `@unit` is never an unknown:
+    // `burrito =>` beside `burrito cost = 8 USD / burrito` asks about the
+    // unit, not for the cost equation solved backwards. Prelude names stay
+    // solvable — `2m + 10 = 30` repurposes the meter as a slope.
+    if env.is_declared_unit(name) {
+        return evaluated;
+    }
     solve_for(env, name).unwrap_or(evaluated)
 }
 

@@ -450,8 +450,31 @@ fn apply_directive(env: &mut Env, name: &str, value: Option<&Expr>) {
                 }
             };
         }
+        "unit" | "units" => {
+            for name in unit_names(value) {
+                env.declare_unit(&name);
+            }
+        }
         culture => apply_culture(&mut env.fmt, culture),
     }
+}
+
+/// The names a `@unit = burrito` directive declares: bare names, alone or
+/// under a product — `@unit = burrito * taco` declares both. Anything else
+/// in the value is ignored, as directives do.
+pub(crate) fn unit_names(value: Option<&Expr>) -> Vec<String> {
+    fn collect(expr: &Expr, out: &mut Vec<String>) {
+        match expr {
+            Expr::Var(name) => out.push(name.clone()),
+            Expr::Mul(factors) => factors.iter().for_each(|f| collect(f, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(value) = value {
+        collect(value, &mut out);
+    }
+    out
 }
 
 /// `@fr-FR` and friends. Only the separators matter to the engine. Switching
@@ -1202,5 +1225,36 @@ mod tests {
         let source = "    @group = false\n    1234567890 => 0";
         let document = evaluate(source);
         assert_eq!(document.answers[0].text, "1234567890");
+    }
+
+    #[test]
+    fn unit_directive_declares_a_base_unit() {
+        // A declared unit renders like a prelude one: a bare answer keeps
+        // its coefficient of one instead of looking like a stray symbol.
+        let document = evaluate("    @unit = burrito\n    burrito => 0");
+        assert_eq!(document.answers[0].text, "1 burrito");
+    }
+
+    #[test]
+    fn a_declared_unit_with_a_body_converts_but_stays_symbolic() {
+        // `firkin` is deliberately a prelude name (9 imperial gallons):
+        // declaring it reclaims the name, so the redefinition stays a unit
+        // instead of shadowing as a plain variable.
+        let source = "    @unit = firkin\n    firkin = 90 lb\n    2 firkin => 0\n    2 firkin in kg => 0";
+        let texts: Vec<String> = evaluate(source).answers.iter().map(|a| a.text.clone()).collect();
+        assert_eq!(texts, vec!["2 firkin", "81.6466 kg"]);
+    }
+
+    #[test]
+    fn declaring_after_defining_upgrades_the_definition() {
+        let source = "    firkin = 90 lb\n    @unit = firkin\n    2 firkin => 0\n    2 firkin in kg => 0";
+        let texts: Vec<String> = evaluate(source).answers.iter().map(|a| a.text.clone()).collect();
+        assert_eq!(texts, vec!["2 firkin", "81.6466 kg"]);
+    }
+
+    #[test]
+    fn one_unit_directive_declares_a_product_of_names() {
+        let document = evaluate("    @unit = burrito * taco\n    taco => 0");
+        assert_eq!(document.answers[0].text, "1 taco");
     }
 }

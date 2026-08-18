@@ -30,12 +30,12 @@ tests/golden.rs         runs the corpus as a regression test
 
 ## Status
 
-148 unit tests, plus 361 end-to-end expectations in `corpus/`, all passing.
+170 unit tests, plus 365 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|
 | `corpus/tour.calcium` | 74 — a readable introduction to the language |
-| `corpus/reference.calcium` | 214 — systematic, one section per feature |
+| `corpus/reference.calcium` | 218 — systematic, one section per feature |
 | `corpus/worked.calcium` | 33 — realistic documents end to end |
 | `corpus/uncertainty.calcium` | 40 — intervals, `±` error propagation, `@sigfigs` |
 

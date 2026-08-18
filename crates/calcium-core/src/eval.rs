@@ -152,6 +152,10 @@ pub struct Env {
     prelude: std::sync::Arc<HashMap<String, Def>>,
     /// Definition order, so the solver can search backwards through history.
     order: Vec<String>,
+    /// Names the document declared as units with `@unit`. Redefining one of
+    /// these keeps it a unit — even a prelude name, which the declaration
+    /// reclaims for the document.
+    declared_units: std::collections::HashSet<String>,
     /// Relations whose left side was not a plain name, e.g. `12x + 13y = 163`.
     pub equations: Vec<(Expr, Expr)>,
     pub fmt: NumFormat,
@@ -463,15 +467,45 @@ impl Env {
     }
 
     pub fn define(&mut self, name: &str, params: Option<Vec<String>>, body: Expr) {
+        // Redefining a document-declared unit keeps it a unit: after `@unit`
+        // says firkin is one, `firkin = 90 lb` is a derived unit — the
+        // document reclaiming the prelude's firkin — not a shadowing
+        // variable. An undeclared prelude name shadows as ever: a document
+        // that defines `T` means its T, not the tesla.
+        let is_unit = self.declared_units.contains(name);
         self.insert(
             name.to_string(),
             Def {
                 params,
                 body,
-                is_unit: false,
+                is_unit,
                 from_prelude: false,
             },
         );
+    }
+
+    /// Marks a name as a unit, per the document's `@unit` directive. An
+    /// already-defined name keeps its body and becomes a derived unit; an
+    /// undefined one becomes a base unit in the prelude's own image:
+    /// `burrito = burrito`. Declared units get no SI prefixes — prefix
+    /// resolution consults the prelude alone.
+    pub fn declare_unit(&mut self, name: &str) {
+        self.declared_units.insert(name.to_string());
+        match self.defs.get_mut(name) {
+            Some(def) => def.is_unit = true,
+            None => self.insert(
+                name.to_string(),
+                Def {
+                    params: None,
+                    body: Expr::var(name),
+                    is_unit: true,
+                    from_prelude: false,
+                },
+            ),
+        }
+        // The formatter's unit vocabulary keeps a meaningful coefficient of
+        // one: a bare `burrito` answer prints as `1 burrito`.
+        std::sync::Arc::make_mut(&mut self.fmt.units).insert(name.to_string());
     }
 
     pub fn get(&self, name: &str) -> Option<&Def> {
@@ -522,6 +556,11 @@ impl Env {
             ]));
         }
         None
+    }
+
+    /// Whether the document itself declared this name a unit with `@unit`.
+    pub fn is_declared_unit(&self, name: &str) -> bool {
+        self.declared_units.contains(name)
     }
 
     /// Whether a name refers to a unit, directly or via an SI prefix.
