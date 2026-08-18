@@ -15,6 +15,7 @@ pub mod format;
 pub mod lexer;
 pub mod num;
 pub mod parser;
+pub mod plot;
 pub mod simplify;
 pub mod solve;
 pub mod typst;

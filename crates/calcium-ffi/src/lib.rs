@@ -112,6 +112,70 @@ pub unsafe extern "C" fn calcium_typst(source: *const c_char) -> *mut c_char {
     guarded(move || calcium_core::typst::to_typst(source))
 }
 
+/// Every `plot(...)` in the document, sampled, as JSON:
+/// `[{"line":3,"x":"t","series":[{"label":"sin(t)","points":[[0,0],...]}]}]`,
+/// where `line` is 0-based and the plot belongs below it. `x` is absent when
+/// no variable is swept (pure data); `xUnit` names the unit a `0..1.5s`
+/// domain swept in, so the axis can read `t (s)`. Points are finite; gaps
+/// are simply missing samples.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_plots(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || {
+        let document = doc::evaluate(source);
+        let mut json = String::from("[");
+        for (i, plot) in document.plots.iter().enumerate() {
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str("{\"line\":");
+            json.push_str(&plot.line.to_string());
+            if let Some(x) = &plot.x_label {
+                json.push_str(",\"x\":");
+                write_json_string(&mut json, x);
+            }
+            if let Some(unit) = &plot.x_unit {
+                json.push_str(",\"xUnit\":");
+                write_json_string(&mut json, unit);
+            }
+            if let Some(unit) = &plot.y_unit {
+                json.push_str(",\"yUnit\":");
+                write_json_string(&mut json, unit);
+            }
+            json.push_str(",\"series\":[");
+            for (j, series) in plot.series.iter().enumerate() {
+                if j > 0 {
+                    json.push(',');
+                }
+                json.push_str("{\"label\":");
+                write_json_string(&mut json, &series.label);
+                json.push_str(",\"swept\":");
+                json.push_str(if series.swept { "true" } else { "false" });
+                json.push_str(",\"points\":[");
+                for (k, (x, y)) in series.points.iter().enumerate() {
+                    if k > 0 {
+                        json.push(',');
+                    }
+                    json.push('[');
+                    json.push_str(&calcium_core::plot::format_point(*x));
+                    json.push(',');
+                    json.push_str(&calcium_core::plot::format_point(*y));
+                    json.push(']');
+                }
+                json.push_str("]}");
+            }
+            json.push_str("]}");
+        }
+        json.push(']');
+        json
+    })
+}
+
 /// How each line reads, as JSON:
 /// `[{"kind":"code","comment":12}, {"kind":"prose"}, ...]`, one entry per
 /// source line, `comment` being the UTF-16 offset of a trailing `#`.
@@ -343,6 +407,21 @@ mod tests {
     fn reports_errors_as_a_flag_not_a_crash() {
         let json = through(calcium_evaluate, "    1 + 2 * =>");
         assert!(json.contains("\"error\":true"), "got {json}");
+    }
+
+    #[test]
+    fn plots_come_out_as_sampled_series() {
+        let json = through(calcium_plots, "    plot(t^2, t = 0..2)\n");
+        assert!(json.starts_with("[{\"line\":0,\"x\":\"t\""), "got {json}");
+        assert!(json.contains("\"label\":\"t^2\""), "got {json}");
+        assert!(json.contains("[[0,0],"), "got {json}");
+        assert!(json.ends_with("[2,4]]}]}]"), "got {json}");
+    }
+
+    #[test]
+    fn a_document_without_plots_is_an_empty_list() {
+        let json = through(calcium_plots, "    2 + 2 =>\n");
+        assert_eq!(json, "[]");
     }
 
     #[test]

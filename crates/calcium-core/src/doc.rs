@@ -51,6 +51,9 @@ pub struct Answer {
 pub struct Document {
     pub blocks: Vec<Block>,
     pub answers: Vec<Answer>,
+    /// Every `plot(...)` in the document, sampled with the environment as
+    /// it stood at that line.
+    pub plots: Vec<crate::plot::Plot>,
 }
 
 /// Splits source into blocks. A line indented further than the block's first
@@ -211,6 +214,7 @@ pub fn evaluate(source: &str) -> Document {
 pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
     let blocks = split_blocks(source);
     let mut answers = Vec::new();
+    let mut plots = Vec::new();
 
     // `name +=` sums the definitions that follow it, until something that is
     // not an indented definition comes along.
@@ -285,6 +289,17 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                     if let Some(sum) = pending_sum.take() {
                         sum.close(env);
                     }
+                    // A plot samples against the environment as it stands
+                    // here, arrow or no arrow; the drawing belongs below
+                    // the block it was asked on.
+                    if let Expr::Call(name, args) = expr {
+                        if name == "plot" {
+                            if let Some(mut plot) = crate::plot::sample(env, args) {
+                                plot.line = block.line + block.lines.len() - 1;
+                                plots.push(plot);
+                            }
+                        }
+                    }
                     if statement.arrow {
                         result = Some(
                             env.eval_uncertain(expr)
@@ -321,7 +336,7 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
         sum.close(env);
     }
 
-    Document { blocks, answers }
+    Document { blocks, answers, plots }
 }
 
 /// An open `name +=` accumulator.
@@ -717,9 +732,27 @@ fn line_tokens(line: &str) -> Vec<TokenSpan> {
     });
 
     let toks = lex(line);
+    // A call's name may span several words — `trap impedance(offset)` —
+    // and the whole name is the function, not just the word touching the
+    // parenthesis. Mark every Word in a run whose next token opens one.
+    let mut calls = vec![false; toks.len()];
+    let mut at = 0;
+    while at < toks.len() {
+        if matches!(toks[at].tok, Tok::Word(_)) {
+            let run = at;
+            while at < toks.len() && matches!(toks[at].tok, Tok::Word(_)) {
+                at += 1;
+            }
+            if matches!(toks.get(at).map(|next| &next.tok), Some(Tok::LParen)) {
+                calls[run..at].fill(true);
+            }
+        } else {
+            at += 1;
+        }
+    }
+
     let mut spans = Vec::new();
-    let mut iter = toks.iter().peekable();
-    while let Some(token) = iter.next() {
+    for (index, token) in toks.iter().enumerate() {
         let class = match &token.tok {
             Tok::Eof => break,
             // Not colours: the query is styled by its own report, and
@@ -733,7 +766,7 @@ fn line_tokens(line: &str) -> Vec<TokenSpan> {
                     TokenClass::Definition
                 } else if crate::parser::is_keyword(word) {
                     TokenClass::Keyword
-                } else if matches!(iter.peek().map(|n| &n.tok), Some(Tok::LParen)) {
+                } else if calls[index] {
                     TokenClass::Function
                 } else {
                     TokenClass::Name
@@ -908,6 +941,30 @@ mod tests {
                 TokenClass::Name,       // $
                 TokenClass::Operator,   // /
                 TokenClass::Name,       // gallon
+            ],
+            "got {spans:?}"
+        );
+    }
+
+    #[test]
+    fn every_word_of_a_multi_word_call_is_a_function() {
+        let spans = &tokens("    plot(trap impedance(offset), 0..1)")[0];
+        let classes: Vec<TokenClass> = spans.iter().map(|s| s.class).collect();
+        assert_eq!(
+            classes,
+            vec![
+                TokenClass::Function, // plot
+                TokenClass::Operator, // (
+                TokenClass::Function, // trap
+                TokenClass::Function, // impedance
+                TokenClass::Operator, // (
+                TokenClass::Name,     // offset
+                TokenClass::Operator, // )
+                TokenClass::Operator, // ,
+                TokenClass::Number,   // 0
+                TokenClass::Operator, // ..
+                TokenClass::Number,   // 1
+                TokenClass::Operator, // )
             ],
             "got {spans:?}"
         );

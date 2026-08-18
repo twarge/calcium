@@ -22,6 +22,11 @@ char *calcium_strip_answers(const char *source);
 /// The document as Typst markup, answers computed fresh.
 char *calcium_typst(const char *source);
 
+/// Sampled plots as JSON, positioned below their 0-based source line:
+/// [{"line":3,"x":"t","series":[{"label":"sin(t)","swept":true,
+///   "points":[[0,0], ...]}]}, ...]
+char *calcium_plots(const char *source);
+
 /// How each line reads: ["heading","code","prose", ...], one per source line.
 char *calcium_line_kinds(const char *source);
 
