@@ -1027,7 +1027,32 @@ impl Env {
     /// declared parameters: `f(90, mean=100, stddev=10)` works even though `f`
     /// declares only `x`.
     pub fn apply(&self, name: &str, def: &Def, args: &[Arg], ctx: &mut Ctx) -> Expr {
-        let params = def.params();
+        let mut body = &def.body;
+        let mut params = def.params();
+        let evaluated_value;
+        if def.params.is_none() {
+            // Implicit parameters are the *undefined* names, in written
+            // order: a name the document already defines is a value the
+            // body uses, not a slot an argument may fill.
+            params.retain(|param| !self.is_defined(param));
+            // When nothing written is bindable, the call applies the
+            // definition's result: `t5 = taylor(f, x=0.5, 5)` stores the
+            // taylor call, and `t5(0.7)` binds the polynomial's leftover
+            // variable, which only exists after evaluation.
+            if params.is_empty() && args.iter().any(|a| a.name.is_none()) {
+                let saved = std::mem::take(&mut ctx.locals);
+                ctx.active.push(name.to_string());
+                evaluated_value = self.eval_in(&def.body, ctx);
+                ctx.active.pop();
+                ctx.locals = saved;
+                params = evaluated_value
+                    .free_vars()
+                    .into_iter()
+                    .filter(|n| !self.is_defined(n) && !crate::builtins::is_builtin(n))
+                    .collect();
+                body = &evaluated_value;
+            }
+        }
         let mut bindings: HashMap<String, Expr> = HashMap::new();
         let mut position = 0usize;
         for arg in args {
@@ -1051,7 +1076,7 @@ impl Env {
         let result = if ctx.calls > MAX_CALLS {
             Expr::Error(format!("{name} recursed too deeply"))
         } else {
-            self.eval_in(&def.body, ctx)
+            self.eval_in(body, ctx)
         };
         ctx.calls -= 1;
         ctx.active.pop();

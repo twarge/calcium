@@ -746,10 +746,12 @@ fn items_of(expr: &Expr) -> Option<Vec<Expr>> {
 /// the first free variable of the body that the environment does not already
 /// define. That is what lets `sum(x, data)` bind `x` while
 /// `sum((age_i - mean)^2, ages)` binds `age_i` and leaves `mean` alone.
+/// Builtin names are never binders, so `map(cos(n/8), 0..8)` binds `n`,
+/// not `cos`.
 fn implicit_binder(env: &Env, body: &Expr) -> Option<String> {
     body.free_vars()
         .into_iter()
-        .find(|name| !env.is_defined(name))
+        .find(|name| !env.is_defined(name) && !is_builtin(name))
 }
 
 /// Resolves an iteration body: a bare name that refers to a definition is
@@ -1354,10 +1356,22 @@ mod tests {
         assert_eq!(e("map(cos, [0, pi/4, pi/3])"), "[1, 0.7071, 0.5]");
         assert_eq!(e("map(10*x, [0, 1, 500])"), "[0, 10, 5,000]");
         assert_eq!(e("map(2x, 0..3)"), "[0, 2, 4, 6]");
+        // The binder is the free variable, never the builtin being called.
+        assert_eq!(e("map(cos(n*pi), 0..2)"), "[1, -1, 1]");
         assert_eq!(e("map(10*y + x, x = [1, 2], y = [3, 4])"), "[31, 42]");
         assert_eq!(e("reduce(acc + x, [1, 2, 3])"), "6");
         assert_eq!(e("reduce(g, [1, 2, 3])"), "g(g(1, 2), 3)");
         assert_eq!(e("filter(x > 0, [-2, -1, 0, 1, 2])"), "[1, 2]");
+    }
+
+    #[test]
+    fn calling_a_value_applies_its_result() {
+        // A stored expression called positionally binds the result's
+        // leftover variable: Calca's `t5 = taylor(f, ...)`, `t5(0.7)`.
+        assert_eq!(run(&["f(x) = x^2", "t = taylor(f, x=0, 2)", "t(3)"]), "9");
+        // A name the document defines is a value the body uses, not a
+        // slot an argument may fill: the argument reaches `t`, not `gain`.
+        assert_eq!(run(&["gain = 3", "g = gain * t", "g(5)"]), "15");
     }
 
     #[test]
