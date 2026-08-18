@@ -182,6 +182,21 @@ enum Engine {
         return answers
     }
 
+    /// Answers and sampled plots from a single evaluation — what a refresh
+    /// wants, so a document with plots is not computed twice over.
+    struct EvaluatedDocument: Decodable {
+        let answers: [Answer]
+        let plots: [PlotData]
+    }
+
+    static func document(_ source: String) -> EvaluatedDocument {
+        guard let json = call(calcium_document, source),
+              let data = json.data(using: .utf8),
+              let document = try? JSONDecoder().decode(EvaluatedDocument.self, from: data)
+        else { return EvaluatedDocument(answers: [], plots: []) }
+        return document
+    }
+
     /// How each source line reads, one entry per line.
     ///
     /// Asked of the engine rather than guessed at here. The rule is subtler

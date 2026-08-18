@@ -70,7 +70,7 @@ struct EditorView: NSViewRepresentable {
         Task {
             coordinator.measureChromeInset(of: scrollView)
             coordinator.observePlotReflow(of: textView)
-            coordinator.refresh(textView)
+            await coordinator.refresh(textView)
         }
         return scrollView
     }
@@ -83,7 +83,7 @@ struct EditorView: NSViewRepresentable {
         guard textView.string != text else { return }
         textView.string = text
         let coordinator = context.coordinator
-        Task { coordinator.refresh(textView) }
+        Task { await coordinator.refresh(textView) }
     }
 
     private func configure(_ textView: NSTextView) {
@@ -591,7 +591,7 @@ struct EditorView: NSViewRepresentable {
                     self.scheduleRefresh(of: textView)
                     return
                 }
-                self.refresh(textView)
+                await self.refresh(textView)
             }
         }
 
@@ -1040,36 +1040,57 @@ struct EditorView: NSViewRepresentable {
 
         // MARK: Recomputing
 
-        func refresh(_ textView: NSTextView) {
-            let lines = refreshAnswers(in: textView)
-            // The delegate always runs on the main thread; say so to the
-            // compiler, which cannot see it.
-            MainActor.assumeIsolated {
-                autocomplete.resolveFirstQuery(in: textView, lines: lines)
+        /// Evaluates off the main thread, then splices and restyles — so a
+        /// slow document costs late answers, never a frozen editor. If typing
+        /// moved the text on while the engine ran, the stale result is
+        /// dropped and a fresh pass scheduled.
+        func refresh(_ textView: NSTextView) async {
+            // The engine ignores whatever follows a `=>`, so the buffer can be
+            // handed over as-is; no need to strip the previous answers first.
+            let source = textView.string
+            let started = CFAbsoluteTimeGetCurrent()
+            let document = await Task.detached(priority: .userInitiated) {
+                Engine.document(source)
+            }.value
+            evalCost = CFAbsoluteTimeGetCurrent() - started
+            guard !Task.isCancelled else { return }
+            guard textView.string == source, !textView.hasMarkedText() else {
+                scheduleRefresh(of: textView)
+                return
             }
+            let lines = apply(document, to: textView)
+            autocomplete.resolveFirstQuery(in: textView, lines: lines)
         }
 
         /// Evaluates, splices and restyles — and measures itself, which is
-        /// what decides whether the next keystroke can do this inline.
+        /// what decides whether the next keystroke can do this inline. Only
+        /// for documents already measured fast enough to compute between
+        /// keystrokes; anything slower goes through the async `refresh`.
         @discardableResult
         private func refreshAnswers(in textView: NSTextView) -> [LineInfo] {
             let started = CFAbsoluteTimeGetCurrent()
-            // The engine ignores whatever follows a `=>`, so the buffer can be
-            // handed over as-is; no need to strip the previous answers first.
-            let answers = Engine.evaluate(textView.string)
-            splice(answers, into: textView)
-            // Plots, from the spliced text, before styling: `highlight`
-            // reserves their room and seats their views.
-            let source = textView.string
-            plotsByLine = source.contains("plot(")
-                ? Dictionary(
-                    Engine.plots(in: source).map { ($0.line, $0) },
-                    uniquingKeysWith: { first, _ in first })
-                : [:]
+            let document = Engine.document(textView.string)
+            let lines = apply(document, to: textView)
+            // The whole pass, splice and styling included: that is what the
+            // next keystroke would pay to do this inline again.
+            evalCost = CFAbsoluteTimeGetCurrent() - started
+            return lines
+        }
+
+        /// Writes one evaluation into the editor: answers spliced, plots
+        /// seated, styling refreshed.
+        private func apply(
+            _ document: Engine.EvaluatedDocument, to textView: NSTextView
+        ) -> [LineInfo] {
+            splice(document.answers, into: textView)
+            // Plots keyed by line, before styling: `highlight` reserves
+            // their room and seats their views.
+            plotsByLine = Dictionary(
+                document.plots.map { ($0.line, $0) },
+                uniquingKeysWith: { first, _ in first })
             let lines = Engine.lines(of: textView.string)
             highlight(textView, lines: lines)
             parent.text = textView.string
-            evalCost = CFAbsoluteTimeGetCurrent() - started
             return lines
         }
 

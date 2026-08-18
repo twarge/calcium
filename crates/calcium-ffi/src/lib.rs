@@ -41,6 +41,25 @@ fn guarded(body: impl FnOnce() -> String + std::panic::UnwindSafe) -> *mut c_cha
     }
 }
 
+/// The answers of an evaluated document as a JSON array.
+fn answers_json(document: &doc::Document) -> String {
+    let mut json = String::from("[");
+    for (i, answer) in document.answers.iter().enumerate() {
+        if i > 0 {
+            json.push(',');
+        }
+        json.push_str("{\"line\":");
+        json.push_str(&answer.line.to_string());
+        json.push_str(",\"text\":");
+        write_json_string(&mut json, &answer.text);
+        json.push_str(",\"error\":");
+        json.push_str(if answer.is_error { "true" } else { "false" });
+        json.push('}');
+    }
+    json.push(']');
+    json
+}
+
 /// Evaluates a document and returns its answers as JSON:
 /// `[{"line":0,"text":"4","error":false}, ...]`, where `line` is 0-based.
 ///
@@ -52,22 +71,28 @@ pub unsafe extern "C" fn calcium_evaluate(source: *const c_char) -> *mut c_char 
     let Some(source) = borrow(source) else {
         return std::ptr::null_mut();
     };
+    guarded(move || answers_json(&doc::evaluate(source)))
+}
+
+/// Everything an editor needs from one evaluation, so a document with plots
+/// is not evaluated once for the answers and again for the curves:
+/// `{"answers":[...],"plots":[...]}`, each half exactly as [`calcium_evaluate`]
+/// and [`calcium_plots`] would return it.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_document(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
     guarded(move || {
         let document = doc::evaluate(source);
-        let mut json = String::from("[");
-        for (i, answer) in document.answers.iter().enumerate() {
-            if i > 0 {
-                json.push(',');
-            }
-            json.push_str("{\"line\":");
-            json.push_str(&answer.line.to_string());
-            json.push_str(",\"text\":");
-            write_json_string(&mut json, &answer.text);
-            json.push_str(",\"error\":");
-            json.push_str(if answer.is_error { "true" } else { "false" });
-            json.push('}');
-        }
-        json.push(']');
+        let mut json = String::from("{\"answers\":");
+        json.push_str(&answers_json(&document));
+        json.push_str(",\"plots\":");
+        json.push_str(&plots_json(&document));
+        json.push('}');
         json
     })
 }
@@ -126,54 +151,56 @@ pub unsafe extern "C" fn calcium_plots(source: *const c_char) -> *mut c_char {
     let Some(source) = borrow(source) else {
         return std::ptr::null_mut();
     };
-    guarded(move || {
-        let document = doc::evaluate(source);
-        let mut json = String::from("[");
-        for (i, plot) in document.plots.iter().enumerate() {
-            if i > 0 {
+    guarded(move || plots_json(&doc::evaluate(source)))
+}
+
+/// The sampled plots of an evaluated document as a JSON array.
+fn plots_json(document: &doc::Document) -> String {
+    let mut json = String::from("[");
+    for (i, plot) in document.plots.iter().enumerate() {
+        if i > 0 {
+            json.push(',');
+        }
+        json.push_str("{\"line\":");
+        json.push_str(&plot.line.to_string());
+        if let Some(x) = &plot.x_label {
+            json.push_str(",\"x\":");
+            write_json_string(&mut json, x);
+        }
+        if let Some(unit) = &plot.x_unit {
+            json.push_str(",\"xUnit\":");
+            write_json_string(&mut json, unit);
+        }
+        if let Some(unit) = &plot.y_unit {
+            json.push_str(",\"yUnit\":");
+            write_json_string(&mut json, unit);
+        }
+        json.push_str(",\"series\":[");
+        for (j, series) in plot.series.iter().enumerate() {
+            if j > 0 {
                 json.push(',');
             }
-            json.push_str("{\"line\":");
-            json.push_str(&plot.line.to_string());
-            if let Some(x) = &plot.x_label {
-                json.push_str(",\"x\":");
-                write_json_string(&mut json, x);
-            }
-            if let Some(unit) = &plot.x_unit {
-                json.push_str(",\"xUnit\":");
-                write_json_string(&mut json, unit);
-            }
-            if let Some(unit) = &plot.y_unit {
-                json.push_str(",\"yUnit\":");
-                write_json_string(&mut json, unit);
-            }
-            json.push_str(",\"series\":[");
-            for (j, series) in plot.series.iter().enumerate() {
-                if j > 0 {
+            json.push_str("{\"label\":");
+            write_json_string(&mut json, &series.label);
+            json.push_str(",\"swept\":");
+            json.push_str(if series.swept { "true" } else { "false" });
+            json.push_str(",\"points\":[");
+            for (k, (x, y)) in series.points.iter().enumerate() {
+                if k > 0 {
                     json.push(',');
                 }
-                json.push_str("{\"label\":");
-                write_json_string(&mut json, &series.label);
-                json.push_str(",\"swept\":");
-                json.push_str(if series.swept { "true" } else { "false" });
-                json.push_str(",\"points\":[");
-                for (k, (x, y)) in series.points.iter().enumerate() {
-                    if k > 0 {
-                        json.push(',');
-                    }
-                    json.push('[');
-                    json.push_str(&calcium_core::plot::format_point(*x));
-                    json.push(',');
-                    json.push_str(&calcium_core::plot::format_point(*y));
-                    json.push(']');
-                }
-                json.push_str("]}");
+                json.push('[');
+                json.push_str(&calcium_core::plot::format_point(*x));
+                json.push(',');
+                json.push_str(&calcium_core::plot::format_point(*y));
+                json.push(']');
             }
             json.push_str("]}");
         }
-        json.push(']');
-        json
-    })
+        json.push_str("]}");
+    }
+    json.push(']');
+    json
 }
 
 /// How each line reads, as JSON:
@@ -422,6 +449,15 @@ mod tests {
     fn a_document_without_plots_is_an_empty_list() {
         let json = through(calcium_plots, "    2 + 2 =>\n");
         assert_eq!(json, "[]");
+    }
+
+    #[test]
+    fn one_document_call_carries_answers_and_plots() {
+        let source = "    2 + 2 =>\n    plot(t^2, t = 0..2)\n";
+        let combined = through(calcium_document, source);
+        let answers = through(calcium_evaluate, source);
+        let plots = through(calcium_plots, source);
+        assert_eq!(combined, format!("{{\"answers\":{answers},\"plots\":{plots}}}"));
     }
 
     #[test]

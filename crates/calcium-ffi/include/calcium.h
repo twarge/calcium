@@ -13,6 +13,11 @@ extern "C" {
 /// Answers as JSON: [{"line":0,"text":"4","error":false}, ...], line 0-based.
 char *calcium_evaluate(const char *source);
 
+/// Answers and sampled plots from one evaluation:
+/// {"answers":[...],"plots":[...]}, each half exactly as calcium_evaluate
+/// and calcium_plots return it.
+char *calcium_document(const char *source);
+
 /// The document with every `=>` followed by its freshly computed answer.
 char *calcium_rewrite(const char *source);
 

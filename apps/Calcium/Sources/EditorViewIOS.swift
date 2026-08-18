@@ -76,7 +76,7 @@ struct EditorViewIOS: UIViewRepresentable {
         context.coordinator.installCommands(for: textView)
         context.coordinator.observePlotReflow(of: textView)
         let coordinator = context.coordinator
-        Task { coordinator.refresh(textView) }
+        Task { await coordinator.refresh(textView) }
         return textView
     }
 
@@ -85,7 +85,7 @@ struct EditorViewIOS: UIViewRepresentable {
         guard textView.text != text else { return }
         textView.text = text
         let coordinator = context.coordinator
-        Task { coordinator.refresh(textView) }
+        Task { await coordinator.refresh(textView) }
     }
 
     @MainActor
@@ -221,19 +221,14 @@ struct EditorViewIOS: UIViewRepresentable {
             let undo = textView.undoManager
             let undoBusy = (undo?.isUndoing ?? false) || (undo?.isRedoing ?? false)
             if !undoBusy, textView.markedTextRange == nil, evalCost < Self.inlineBudget {
-                refresh(textView)
+                refreshAnswers(in: textView)
                 updateCompletions(in: textView)
                 return
             }
             parent.text = textView.text
             // Restyle even while evaluation waits.
             highlight(textView, lines: Engine.lines(of: textView.text))
-            scheduled = Task { [weak self, weak textView] in
-                try? await Task.sleep(for: .milliseconds(120))
-                guard !Task.isCancelled, let self, let textView else { return }
-                guard textView.markedTextRange == nil else { return }
-                self.refresh(textView)
-            }
+            scheduleRefresh(of: textView)
             updateCompletions(in: textView)
         }
 
@@ -272,7 +267,7 @@ struct EditorViewIOS: UIViewRepresentable {
                 // the newline does not.
                 textView.textStorage.replaceCharacters(in: markerRange, with: "")
                 textView.selectedRange = NSRange(location: markerRange.location, length: 0)
-                refresh(textView)
+                refreshAnswers(in: textView)
                 return false
             case .none:
                 return true
@@ -348,21 +343,66 @@ struct EditorViewIOS: UIViewRepresentable {
             return (arrowStart, afterArrow, contentsEnd)
         }
 
-        func refresh(_ textView: UITextView) {
-            let started = CFAbsoluteTimeGetCurrent()
-            let answers = Engine.evaluate(textView.text)
-            splice(answers, into: textView)
-            // Plots, from the spliced text, before styling: `highlight`
-            // reserves their room and seats their views.
+        /// Evaluates off the main thread, then splices and restyles — the
+        /// same bargain as the Mac coordinator: a slow document costs late
+        /// answers, never a frozen editor. If typing moved the text on while
+        /// the engine ran, the stale result is dropped and a fresh pass
+        /// scheduled.
+        func refresh(_ textView: UITextView) async {
             let source = textView.text ?? ""
-            plotsByLine = source.contains("plot(")
-                ? Dictionary(
-                    Engine.plots(in: source).map { ($0.line, $0) },
-                    uniquingKeysWith: { first, _ in first })
-                : [:]
+            let started = CFAbsoluteTimeGetCurrent()
+            let document = await Task.detached(priority: .userInitiated) {
+                Engine.document(source)
+            }.value
+            evalCost = CFAbsoluteTimeGetCurrent() - started
+            guard !Task.isCancelled else { return }
+            guard textView.text == source, textView.markedTextRange == nil else {
+                scheduleRefresh(of: textView)
+                return
+            }
+            apply(document, to: textView)
+        }
+
+        /// Waits for a pause before writing answers back — the fallback for
+        /// the cases `textViewDidChange` rules out of the inline pass.
+        private func scheduleRefresh(of textView: UITextView) {
+            scheduled?.cancel()
+            scheduled = Task { [weak self, weak textView] in
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled, let self, let textView else { return }
+                // Never interrupt an in-progress input method composition.
+                guard textView.markedTextRange == nil else {
+                    self.scheduleRefresh(of: textView)
+                    return
+                }
+                await self.refresh(textView)
+            }
+        }
+
+        /// Evaluates, splices and restyles in one synchronous pass — and
+        /// measures itself, which is what decides whether the next keystroke
+        /// can afford this inline. Also the path for direct edits — line
+        /// commands, scrubbing — whose splice should land with the edit.
+        func refreshAnswers(in textView: UITextView) {
+            let started = CFAbsoluteTimeGetCurrent()
+            let document = Engine.document(textView.text)
+            apply(document, to: textView)
+            // The whole pass, splice and styling included: that is what the
+            // next keystroke would pay to do this inline again.
+            evalCost = CFAbsoluteTimeGetCurrent() - started
+        }
+
+        /// Writes one evaluation into the editor: answers spliced, plots
+        /// seated, styling refreshed.
+        private func apply(_ document: Engine.EvaluatedDocument, to textView: UITextView) {
+            splice(document.answers, into: textView)
+            // Plots keyed by line, before styling: `highlight` reserves
+            // their room and seats their views.
+            plotsByLine = Dictionary(
+                document.plots.map { ($0.line, $0) },
+                uniquingKeysWith: { first, _ in first })
             highlight(textView, lines: Engine.lines(of: textView.text))
             parent.text = textView.text
-            evalCost = CFAbsoluteTimeGetCurrent() - started
         }
 
         // MARK: Splicing (port of the Mac coordinator)
@@ -611,7 +651,7 @@ struct EditorViewIOS: UIViewRepresentable {
                 if case .preferencesChanged = command {
                     // Applies regardless of focus: the settings sheet has
                     // the editor resigned while it is up.
-                    refresh(textView)
+                    refreshAnswers(in: textView)
                     return false
                 }
                 guard textView.isFirstResponder else { return false }
@@ -660,7 +700,7 @@ struct EditorViewIOS: UIViewRepresentable {
         ) {
             textView.textStorage.replaceCharacters(in: range, with: replacement)
             textView.selectedRange = selection
-            refresh(textView)
+            refreshAnswers(in: textView)
         }
 
         /// Toggles a marker pair around the selection: wraps it, or unwraps
@@ -818,7 +858,7 @@ struct EditorViewIOS: UIViewRepresentable {
                 let end = carried(NSMaxRange(selection), span: span, from: lines, to: rewritten)
                 textView.selectedRange = NSRange(location: start, length: max(0, end - start))
             }
-            refresh(textView)
+            refreshAnswers(in: textView)
         }
 
         /// Where a text offset lands after per-line rewrites: the same
