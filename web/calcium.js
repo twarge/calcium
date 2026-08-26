@@ -1,40 +1,22 @@
 // Calcium in the browser: the same Rust engine the apps use, compiled to
 // WebAssembly, speaking the same C-string ABI over linear memory. No
-// wasm-bindgen — the interface is four functions over strings, and the
-// marshalling below is the whole of it.
+// wasm-bindgen — the interface is a few functions over strings, and the
+// marshalling lives in engine.js, shared with the evaluation worker.
 //
 // The editing model is the apps' too, ported from the Swift coordinator:
 // answers live in the text after each `=>`, written in when typing pauses,
-// with the caret adjusted across every splice. See EditorView.swift for the
-// reference implementation and the reasoning.
+// with the caret adjusted across every splice. Evaluation runs in a worker,
+// as it runs off the main thread in the apps: a slow document costs late
+// answers, never a frozen editor. See EditorView.swift for the reference
+// implementation and the reasoning.
 
-const wasm = await WebAssembly.instantiateStreaming(
-  fetch(new URL("calcium_ffi.wasm", import.meta.url)));
-const engine = wasm.instance.exports;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+import { load } from "./engine.js";
 
-/** Calls a `char* -> char*` export, owning both buffers correctly. */
-function call(name, text) {
-  const bytes = encoder.encode(text);
-  const inPtr = engine.calcium_alloc(bytes.length + 1);
-  new Uint8Array(engine.memory.buffer, inPtr, bytes.length).set(bytes);
-  new Uint8Array(engine.memory.buffer)[inPtr + bytes.length] = 0;
-  const outPtr = engine[name](inPtr);
-  engine.calcium_dealloc(inPtr, bytes.length + 1);
-  if (!outPtr) return null;
-  // Re-acquire the buffer: it may have moved if memory grew during the call.
-  const memory = new Uint8Array(engine.memory.buffer);
-  let end = outPtr;
-  while (memory[end] !== 0) end++;
-  const result = decoder.decode(memory.subarray(outPtr, end));
-  engine.calcium_string_free(outPtr);
-  return result;
-}
-
-const evaluate = (text) => JSON.parse(call("calcium_evaluate", text) ?? "[]");
+const { call } = await load();
 const lineInfo = (text) => JSON.parse(call("calcium_line_kinds", text) ?? "[]");
 const tokenInfo = (text) => JSON.parse(call("calcium_tokens", text) ?? "[]");
+
+const worker = new Worker(new URL("worker.js", import.meta.url), { type: "module" });
 
 // ---------------------------------------------------------------------------
 // Splicing — the three-case caret adjustment from the apps. JavaScript string
@@ -112,6 +94,9 @@ function renderBackdrop(text, answers, info, toks) {
       if (meta.kind === "prose") {
         return `<span class="prose">${linkifyProse(line)}</span>`;
       }
+      if (meta.kind === "raw") {
+        return `<span class="raw">${escapeHTML(line)}</span>`;
+      }
       let cls = meta.kind === "heading" ? "heading" : "";
 
       // Split the line into optionally-styled segments, left to right.
@@ -173,15 +158,29 @@ function paint() {
   if (editor.value.endsWith("\n")) backdrop.innerHTML += "\n";
 }
 
-/// The full pass — evaluate, splice, repaint — after typing pauses.
-function refresh() {
-  lastAnswers = evaluate(editor.value);
-  const [text, caret] = splice(editor.value, lastAnswers, editor.selectionStart);
-  if (text !== editor.value) {
-    editor.value = text;
-    editor.setSelectionRange(caret, caret);
+/// The full pass — evaluate in the worker, then splice and repaint — after
+/// typing pauses. Only the newest request's reply is honoured, and the splice
+/// only lands if the text has not moved since the request: if it has, the
+/// input handler has already scheduled the refresh that will supersede this.
+let evalSeq = 0;
+let evalText = "";
+
+worker.onmessage = ({ data }) => {
+  if (data.seq !== evalSeq) return;
+  lastAnswers = data.answers;
+  if (editor.value === evalText) {
+    const [text, caret] = splice(editor.value, lastAnswers, editor.selectionStart);
+    if (text !== editor.value) {
+      editor.value = text;
+      editor.setSelectionRange(caret, caret);
+    }
   }
   paint();
+};
+
+function refresh() {
+  evalText = editor.value;
+  worker.postMessage({ seq: ++evalSeq, text: evalText });
 }
 
 editor.addEventListener("input", () => {
@@ -207,6 +206,12 @@ Odd units!
     walking speed in furlongs/fortnight
         => 2,688 furlongs/fortnight
 
+Compute with uncertainty:
+
+    current = 2±0.1 mA
+    resistance = 10±2 Ω
+    voltage = current * resistance in mV =>
+
 _Unknown_ units **cancel**!
 
     burrito length = 1 ft / burrito
@@ -218,9 +223,10 @@ It is a symbolic calculator, too:
     y^2 - 5y + 6 = 0
     y =>
 
-Try it here!
+Plots — \`plot(sin(t), t = 0..2 s)\` — draw in the Mac and iOS apps.
 
-Calcium is free and [open source](https://github.com/twarge/calcium). Feel free to open issues on GitHub.
+Calcium is free and [open source](https://github.com/twarge/calcium). Feel free to open issues on [GitHub](https://github.com/twarge/calcium/issues).
 
 `;
+paint();
 refresh();

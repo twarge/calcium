@@ -18,7 +18,7 @@ echo "==> wasm engine"
 cargo build --profile wasm-release --target wasm32-unknown-unknown -p calcium-wasm
 mkdir -p "$DEST" "$FONTS"
 cp target/wasm32-unknown-unknown/wasm-release/calcium_wasm.wasm "$DEST/calcium_ffi.wasm"
-cp web/calcium.js "$DEST/"
+cp web/calcium.js web/engine.js web/worker.js "$DEST/"
 
 echo "==> fonts (woff2)"
 for weight in Regular Bold; do
