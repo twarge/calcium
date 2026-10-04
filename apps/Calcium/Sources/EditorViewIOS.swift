@@ -145,6 +145,11 @@ struct EditorViewIOS: UIViewRepresentable {
         /// view was still windowless, the input system's first activation
         /// came up with the accessory but no keyboard; by the time editing
         /// begins the input session is real, and a reload seats both.
+        ///
+        /// Built once and kept: what it holds depends only on the device,
+        /// and the accessory refits itself from there — the rows divide
+        /// whatever width the keyboard spans, inside the safe area, and
+        /// rescale when the text size changes.
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard textView.inputAccessoryView == nil else { return }
             // The calculator rows are for the iPhone, whose letters
@@ -152,6 +157,11 @@ struct EditorViewIOS: UIViewRepresentable {
             // keyboard has its own number row, and with a hardware
             // keyboard the rows would float as clutter — there, only the
             // completion strip rides along.
+            //
+            // The idiom, not the size class, because the question is which
+            // keyboard sits below, not how wide the window is: a Pro Max on
+            // its side is regular width, and a folding iPhone changes width
+            // as it opens, yet both still type on the phone keyboard.
             let accessory = KeypadAccessory(
                 for: textView,
                 keys: textView.traitCollection.userInterfaceIdiom == .phone)
