@@ -299,7 +299,9 @@ fn sum_matrices(terms: Vec<Expr>) -> Expr {
             Expr::Matrix(rows) => match &mut total {
                 None => total = Some(rows),
                 Some(acc) => {
-                    if acc.len() != rows.len() || acc[0].len() != rows[0].len() {
+                    if acc.len() != rows.len()
+                        || acc.first().map(Vec::len) != rows.first().map(Vec::len)
+                    {
                         return Expr::Error("matrix dimensions do not match".to_string());
                     }
                     for (r, row) in rows.into_iter().enumerate() {
@@ -565,6 +567,9 @@ fn multiply_matrices(factors: Vec<Expr>) -> Expr {
 }
 
 pub fn matmul(a: &[Vec<Expr>], b: &[Vec<Expr>]) -> Result<Vec<Vec<Expr>>, String> {
+    if a.is_empty() || b.is_empty() {
+        return Err("cannot multiply an empty matrix".to_string());
+    }
     let inner = a[0].len();
     if inner != b.len() {
         return Err(format!(
@@ -695,7 +700,9 @@ fn simplify_power(base: &Expr, exp: &Expr) -> Expr {
 fn simplify_compare(op: CmpOp, a: &Expr, b: &Expr) -> Expr {
     // `[1, 6; 3, 8] < [5, 2; 7, 4]` compares element by element.
     if let (Expr::Matrix(left), Expr::Matrix(right)) = (a, b) {
-        if left.len() == right.len() && left[0].len() == right[0].len() {
+        if left.len() == right.len()
+            && left.first().map(Vec::len) == right.first().map(Vec::len)
+        {
             let compared = left
                 .iter()
                 .zip(right)

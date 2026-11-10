@@ -26,6 +26,15 @@ const KEYWORDS: &[&str] = &["if", "then", "else", "let", "in", "mod", "true", "f
 /// overflowing the stack, which `catch_unwind` at the FFI cannot catch.
 const MAX_DEPTH: usize = 128;
 
+/// The longest run of one left-associative operator that nests — `a mod b
+/// mod c …`, `a | b | …`, `x[0][0]…`, `a in b in …`. These loop rather than
+/// recurse, so [`MAX_DEPTH`] never sees them, yet each link is one more
+/// level of a tree that evaluation, simplification and printing all walk
+/// recursively — on a 512 KiB background thread in the apps.
+const MAX_CHAIN: usize = 100;
+
+const TOO_DEEP: &str = "nested too deeply";
+
 pub fn is_keyword(word: &str) -> bool {
     KEYWORDS.contains(&word)
 }
@@ -41,6 +50,9 @@ pub struct Parser {
     in_let_value: usize,
     /// Current expression nesting, checked against [`MAX_DEPTH`].
     depth: usize,
+    /// Set when a chain was cut off at [`MAX_CHAIN`], so the statement
+    /// loop can tell that from ordinary unparsable input.
+    chain_cut: bool,
 }
 
 /// Parses one logical line, which may hold several `;`-separated statements.
@@ -51,6 +63,7 @@ pub fn parse_line(src: &str) -> Vec<Statement> {
         in_abs: 0,
         in_let_value: 0,
         depth: 0,
+        chain_cut: false,
     }
     .statements()
 }
@@ -63,6 +76,7 @@ pub fn parse_expr(src: &str) -> Expr {
         in_abs: 0,
         in_let_value: 0,
         depth: 0,
+        chain_cut: false,
     };
     let expr = parser.expr();
     if !parser.at_end() {
@@ -142,13 +156,38 @@ impl Parser {
             out.push(self.statement());
             if !matches!(self.peek(), Tok::Semi | Tok::Eof) {
                 // Unconsumed junk: record it and resynchronize at the next `;`.
+                // An arrow in the junk is honoured only for a chain cut off
+                // at its cap, where the answer is that error. Other junk
+                // stays silent: hard-wrapped prose that reads as code — a
+                // sentence mentioning `=>` — must not sprout an error.
                 let start = self.pos;
-                self.skip_to_statement_end();
+                let mut depth = 0i32;
+                let mut answer = None;
+                loop {
+                    match self.peek() {
+                        Tok::Eof => break,
+                        Tok::Arrow => {
+                            answer = self.take_arrow();
+                            break;
+                        }
+                        Tok::LParen | Tok::LBracket | Tok::LBrace => depth += 1,
+                        Tok::RParen | Tok::RBracket | Tok::RBrace => depth -= 1,
+                        Tok::Semi if depth <= 0 => break,
+                        _ => {}
+                    }
+                    self.bump();
+                }
                 if self.pos == start {
                     self.bump();
                 }
                 if let Some(last) = out.last_mut() {
-                    if !matches!(last.stmt, Stmt::Expr(Expr::Error(_))) {
+                    if std::mem::take(&mut self.chain_cut) {
+                        last.stmt = Stmt::Expr(Expr::Error(TOO_DEEP.to_string()));
+                        if answer.is_some() {
+                            last.arrow = true;
+                            last.answer = answer;
+                        }
+                    } else if !matches!(last.stmt, Stmt::Expr(Expr::Error(_))) {
                         last.stmt = Stmt::Expr(Expr::Error("unexpected input".to_string()));
                     }
                 }
@@ -165,10 +204,11 @@ impl Parser {
             } else {
                 None
             };
-            let arrow = self.take_arrow();
+            let answer = self.take_arrow();
             return Statement {
                 stmt: Stmt::Directive { name, value },
-                arrow,
+                arrow: answer.is_some(),
+                answer,
             };
         }
 
@@ -177,10 +217,11 @@ impl Parser {
         if self.peek_word().is_some() {
             let name = self.identifier();
             if self.eat(&Tok::PlusEq) {
-                let arrow = self.take_arrow();
+                let answer = self.take_arrow();
                 return Statement {
                     stmt: Stmt::SumDefine { name },
-                    arrow,
+                    arrow: answer.is_some(),
+                    answer,
                 };
             }
             self.pos = checkpoint;
@@ -189,23 +230,29 @@ impl Parser {
         // `name = body` / `name(params) = body`, versus a bare expression or a
         // general equation.
         if let Some(stmt) = self.try_definition() {
-            let arrow = self.take_arrow();
-            return Statement { stmt, arrow };
+            let answer = self.take_arrow();
+            return Statement {
+                stmt,
+                arrow: answer.is_some(),
+                answer,
+            };
         }
 
         let lhs = self.expr();
         if self.eat(&Tok::Eq) {
             let rhs = self.expr();
-            let arrow = self.take_arrow();
+            let answer = self.take_arrow();
             return Statement {
                 stmt: Stmt::Equation { lhs, rhs },
-                arrow,
+                arrow: answer.is_some(),
+                answer,
             };
         }
-        let arrow = self.take_arrow();
+        let answer = self.take_arrow();
         Statement {
             stmt: Stmt::Expr(lhs),
-            arrow,
+            arrow: answer.is_some(),
+            answer,
         }
     }
 
@@ -263,12 +310,21 @@ impl Parser {
 
     /// Consumes a trailing `=>` plus whatever stale result text follows it.
     /// The result is always regenerated, never trusted.
-    fn take_arrow(&mut self) -> bool {
-        if !self.eat(&Tok::Arrow) {
-            return false;
+    /// The error for a chain past [`MAX_CHAIN`], noted for `statements`.
+    fn cut_off(&mut self) -> Expr {
+        self.chain_cut = true;
+        Expr::Error(TOO_DEEP.to_string())
+    }
+
+    fn take_arrow(&mut self) -> Option<(usize, usize, usize)> {
+        if !matches!(self.peek(), Tok::Arrow) {
+            return None;
         }
+        let (start, end) = (self.tokens[self.pos].start, self.tokens[self.pos].end);
+        self.bump();
         self.skip_to_statement_end();
-        true
+        // The `;` that ends the statement, or where the line's code ends.
+        Some((start, end, self.tokens[self.pos].start))
     }
 
     /// Skips to the next top-level `;`, tracking bracket depth so the `;`
@@ -295,7 +351,7 @@ impl Parser {
     /// at the statement level.
     fn expr(&mut self) -> Expr {
         if self.depth >= MAX_DEPTH {
-            return Expr::Error("nested too deeply".to_string());
+            return Expr::Error(TOO_DEEP.to_string());
         }
         self.depth += 1;
         let expr = self.conversion();
@@ -305,7 +361,12 @@ impl Parser {
 
     fn conversion(&mut self) -> Expr {
         let mut lhs = self.logic_or();
+        let mut links = 0;
         while self.in_is_conversion() {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             self.bump();
             let unit = self.logic_or();
             lhs = Expr::Convert(Box::new(lhs), Box::new(unit));
@@ -315,7 +376,12 @@ impl Parser {
 
     fn logic_or(&mut self) -> Expr {
         let mut lhs = self.logic_and();
+        let mut links = 0;
         while self.in_abs == 0 && matches!(self.peek(), Tok::PipePipe) {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             self.bump();
             let rhs = self.logic_and();
             lhs = Expr::Logic(LogicOp::Or, Box::new(lhs), Box::new(rhs));
@@ -325,7 +391,12 @@ impl Parser {
 
     fn logic_and(&mut self) -> Expr {
         let mut lhs = self.bit_or();
+        let mut links = 0;
         while self.eat(&Tok::AmpAmp) {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             let rhs = self.bit_or();
             lhs = Expr::Logic(LogicOp::And, Box::new(lhs), Box::new(rhs));
         }
@@ -334,7 +405,12 @@ impl Parser {
 
     fn bit_or(&mut self) -> Expr {
         let mut lhs = self.bit_and();
+        let mut links = 0;
         while self.in_abs == 0 && matches!(self.peek(), Tok::Pipe) {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             self.bump();
             let rhs = self.bit_and();
             lhs = Expr::Bit(BitOp::Or, Box::new(lhs), Box::new(rhs));
@@ -344,7 +420,12 @@ impl Parser {
 
     fn bit_and(&mut self) -> Expr {
         let mut lhs = self.comparison();
+        let mut links = 0;
         while self.eat(&Tok::Amp) {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             let rhs = self.comparison();
             lhs = Expr::Bit(BitOp::And, Box::new(lhs), Box::new(rhs));
         }
@@ -400,6 +481,7 @@ impl Parser {
     /// Explicit `*`, `/` and `mod`, left-associative.
     fn term(&mut self) -> Expr {
         let mut lhs = self.factor();
+        let mut mods = 0;
         loop {
             if self.eat(&Tok::Star) {
                 let rhs = self.factor();
@@ -408,6 +490,10 @@ impl Parser {
                 let rhs = self.factor();
                 lhs = Expr::div(lhs, rhs);
             } else if self.peek_word() == Some("mod") {
+                mods += 1;
+                if mods > MAX_CHAIN {
+                    return self.cut_off();
+                }
                 self.bump();
                 let rhs = self.factor();
                 lhs = Expr::Mod(Box::new(lhs), Box::new(rhs));
@@ -462,7 +548,7 @@ impl Parser {
     /// through here without ever passing `expr`.
     fn unary(&mut self) -> Expr {
         if self.depth >= MAX_DEPTH {
-            return Expr::Error("nested too deeply".to_string());
+            return Expr::Error(TOO_DEEP.to_string());
         }
         self.depth += 1;
         let expr = if self.eat(&Tok::Minus) {
@@ -495,7 +581,12 @@ impl Parser {
     fn postfix(&mut self) -> Expr {
         let mut base = self.primary();
         // Indexing must be tight: `mat[0]` indexes, `2 [1,2]` scales a matrix.
+        let mut links = 0;
         while matches!(self.peek(), Tok::LBracket) && !self.space_before() {
+            links += 1;
+            if links > MAX_CHAIN {
+                return self.cut_off();
+            }
             self.bump();
             let mut indices = Vec::new();
             if !matches!(self.peek(), Tok::RBracket) {
@@ -769,6 +860,11 @@ impl Parser {
         if !self.eat(&Tok::RBracket) {
             return Expr::Error("expected ']'".to_string());
         }
+        // Every row the same width. `[1, 2; 3` is the ordinary half-typed
+        // state of a matrix, and everything downstream indexes by row 0.
+        if rows.iter().any(|row| row.len() != rows[0].len()) {
+            return Expr::Error("matrix rows differ in length".to_string());
+        }
         Expr::Matrix(rows)
     }
 
@@ -1016,4 +1112,22 @@ mod tests {
         let fine = format!("{}1{}", "(".repeat(50), ")".repeat(50));
         assert_eq!(p(&fine), "1");
     }
+    #[test]
+    fn a_ragged_matrix_is_an_error_not_a_panic() {
+        // The half-typed state of `[1, 2; 3, 4]`. Downstream code indexes
+        // every row by the width of the first.
+        for src in ["|[1, 2; 3]|", "[1, 2; 3]^T", "[1, 2; 3] * [1, 2; 3, 4]", "[1, 2; 3] + [1, 2; 3, 4]"] {
+            let text = crate::doc::rewrite(&format!("    {src} =>"));
+            assert!(text.contains("matrix rows differ in length"), "{text}");
+        }
+    }
+
+    #[test]
+    fn empty_matrices_and_extreme_exponents_do_not_panic() {
+        for src in ["[] * [1, 2]", "[1, 2] * []", "[] + []", "[] == []", "1.0e-65535", "1.0e-70000 * 2.0"] {
+            crate::doc::rewrite(&format!("    {src} =>"));
+        }
+        crate::doc::rewrite("    [] * x = [1]\n    x =>");
+    }
+
 }

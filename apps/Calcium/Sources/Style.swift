@@ -35,8 +35,8 @@ enum Styling {
         let text = storage.string as NSString
         var index = 0
         var checkable: [NSRange] = []
-        text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
-            _, lineRange, _, _ in
+        text.enumerateEngineLines {
+            lineRange in
             defer { index += 1 }
             let line = lines.indices.contains(index) ? lines[index] : nil
             switch line?.kind ?? .code {
@@ -208,7 +208,11 @@ enum Styling {
                 length: match.range(at: 1).length)
             storage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: title)
             let target = (line as NSString).substring(with: match.range(at: 2))
-            if let url = URL(string: target), url.scheme != nil {
+            // http(s) only, as on iOS: a document from someone else must
+            // not open a file: or custom-scheme URL on a single click.
+            if let url = URL(string: target),
+               let scheme = url.scheme?.lowercased(),
+               scheme == "http" || scheme == "https" {
                 storage.addAttribute(.link, value: url, range: title)
             }
         }

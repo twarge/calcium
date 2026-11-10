@@ -37,21 +37,10 @@ final class Autocomplete {
         guard let index = lines.firstIndex(where: { $0.query != nil }) else { return }
 
         let text = textView.string as NSString
-        var lineStart = 0
-        var found: NSRange? = nil
-        var current = 0
-        text.enumerateSubstrings(
-            in: NSRange(location: 0, length: text.length),
-            options: [.byLines, .substringNotRequired]
-        ) { _, range, _, stop in
-            if current == index {
-                lineStart = range.location
-                found = range
-                stop.pointee = true
-            }
-            current += 1
-        }
-        guard let lineRange = found else { return }
+        let ranges = text.engineLineRanges()
+        guard ranges.indices.contains(index) else { return }
+        let lineRange = ranges[index]
+        let lineStart = lineRange.location
         let line = text.substring(with: lineRange)
         guard !inFlight.contains(line), !answered.contains(line), line.contains("#?") else {
             return

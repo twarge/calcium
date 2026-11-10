@@ -127,6 +127,10 @@ fn is_word_continue(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// The largest decimal exponent a literal keeps; beyond it the value is
+/// infinite or zero whatever the digits say.
+const MAX_EXPONENT: i64 = 1_000_000;
+
 pub fn lex(src: &str) -> Vec<Token> {
     Lexer::new(src).run()
 }
@@ -147,6 +151,11 @@ pub fn query_start(src: &str) -> Option<usize> {
 /// exceptions — `#?` is an autocomplete request, and a `#` inside a string is
 /// just a character — and an editor colouring comments needs the same answer
 /// the engine acts on.
+/// Byte offset of the `#` that starts a trailing comment, if there is one.
+pub(crate) fn comment_byte(src: &str) -> Option<usize> {
+    Lexer::new(src).run_inner().1
+}
+
 pub fn comment_start(src: &str) -> Option<usize> {
     // UTF-16, because that is what a text view counts in.
     Lexer::new(src)
@@ -238,7 +247,8 @@ impl<'a> Lexer<'a> {
             self.push(tok, start, space_before);
             space_before = false;
         }
-        let end = self.src.len();
+        // Where scanning stopped: the trailing comment, if there is one.
+        let end = self.comment.unwrap_or(self.src.len());
         self.out.push(Token {
             tok: Tok::Eof,
             start: end,
@@ -386,7 +396,10 @@ impl<'a> Lexer<'a> {
                 while matches!(self.peek(), Some(d) if d.is_ascii_digit()) {
                     digits.push(self.bump().unwrap());
                 }
-                exponent = digits.parse::<i64>().unwrap_or(0);
+                // Saturating: a run of digits too long for an i64 is a huge
+                // exponent, not zero, and far past anything representable
+                // either way — the cap keeps the arithmetic below in range.
+                exponent = digits.parse::<i64>().unwrap_or(MAX_EXPONENT).min(MAX_EXPONENT);
                 if negative {
                     exponent = -exponent;
                 }

@@ -30,7 +30,7 @@ tests/golden.rs         runs the corpus as a regression test
 
 ## Status
 
-201 unit tests, plus 366 end-to-end expectations in `corpus/`, all passing.
+224 unit tests, plus 366 end-to-end expectations in `corpus/`, all passing.
 
 | Document | Expectations |
 |---|---|

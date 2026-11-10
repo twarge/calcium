@@ -280,7 +280,7 @@ fn solve_matrix_equation(env: &Env, lhs: &Expr, rhs: &Expr, name: &str) -> Optio
     let Expr::Matrix(vector) = target else {
         return None;
     };
-    if matrix.len() != matrix[0].len() || matrix.len() != vector.len() {
+    if matrix.is_empty() || matrix.len() != matrix[0].len() || matrix.len() != vector.len() {
         return None;
     }
     Some(builtins::solve_linear_system(&matrix, &vector))

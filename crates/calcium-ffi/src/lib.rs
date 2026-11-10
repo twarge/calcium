@@ -54,6 +54,12 @@ fn answers_json(document: &doc::Document) -> String {
         write_json_string(&mut json, &answer.text);
         json.push_str(",\"error\":");
         json.push_str(if answer.is_error { "true" } else { "false" });
+        // Where the answer is written, UTF-16 within the line: an editor
+        // replaces exactly this range and never searches for the arrow.
+        json.push_str(&format!(
+            ",\"start\":{},\"end\":{}",
+            answer.span_utf16.0, answer.span_utf16.1
+        ));
         json.push('}');
     }
     json.push(']');
@@ -61,7 +67,9 @@ fn answers_json(document: &doc::Document) -> String {
 }
 
 /// Evaluates a document and returns its answers as JSON:
-/// `[{"line":0,"text":"4","error":false}, ...]`, where `line` is 0-based.
+/// `[{"line":0,"text":"4","error":false,"start":8,"end":10}, ...]`, where
+/// `line` is 0-based and `start..end` is the UTF-16 range on that line the
+/// answer occupies — from just past the arrow to the end of the old answer.
 ///
 /// # Safety
 /// `source` must be null or a valid, NUL-terminated UTF-8 C string. The result
@@ -93,6 +101,41 @@ pub unsafe extern "C" fn calcium_document(source: *const c_char) -> *mut c_char 
         json.push_str(",\"plots\":");
         json.push_str(&plots_json(&document));
         json.push('}');
+        json
+    })
+}
+
+/// Where every answer sits, without evaluating anything, as JSON:
+/// `[{"line":0,"arrow":6,"start":8,"end":10}, ...]` — UTF-16 offsets within
+/// the 0-based line: where the arrow starts, and the range its answer
+/// occupies. Parsing only, so it is cheap enough to ask about the caret's
+/// line on a keystroke.
+///
+/// # Safety
+/// As [`calcium_evaluate`].
+#[no_mangle]
+pub unsafe extern "C" fn calcium_answer_slots(source: *const c_char) -> *mut c_char {
+    let Some(source) = borrow(source) else {
+        return std::ptr::null_mut();
+    };
+    guarded(move || {
+        let lines: Vec<&str> = source.lines().collect();
+        let mut json = String::from("[");
+        for (i, slot) in doc::answer_slot_list(source).iter().enumerate() {
+            let Some(line) = lines.get(slot.line) else { continue };
+            let utf16 = |byte: usize| line[..byte].encode_utf16().count();
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                "{{\"line\":{},\"arrow\":{},\"start\":{},\"end\":{}}}",
+                slot.line,
+                utf16(slot.arrow),
+                utf16(slot.start),
+                utf16(slot.end)
+            ));
+        }
+        json.push(']');
         json
     })
 }
@@ -417,8 +460,8 @@ mod tests {
         let json = through(calcium_evaluate, "    2 + 2 =>\n    sqrt(9) =>");
         assert_eq!(
             json,
-            "[{\"line\":0,\"text\":\"4\",\"error\":false},\
-              {\"line\":1,\"text\":\"3\",\"error\":false}]"
+            "[{\"line\":0,\"text\":\"4\",\"error\":false,\"start\":12,\"end\":12},\
+              {\"line\":1,\"text\":\"3\",\"error\":false,\"start\":14,\"end\":14}]"
         );
     }
 
@@ -543,4 +586,14 @@ mod tests {
             "got {json}"
         );
     }
+    #[test]
+    fn answer_slots_skip_strings_and_count_utf16() {
+        let json = through(calcium_answer_slots, "    \"🚀 => x\" => old; 2 ⇒ 2 # c");
+        assert_eq!(
+            json,
+            "[{\"line\":0,\"arrow\":14,\"start\":16,\"end\":20},\
+              {\"line\":0,\"arrow\":24,\"start\":25,\"end\":27}]"
+        );
+    }
+
 }

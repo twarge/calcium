@@ -43,6 +43,10 @@ struct Editor {
     last_answers: RefCell<HashMap<usize, String>>,
     /// Shared with the file-dialog callbacks, which outlive the call.
     file: Rc<RefCell<Option<std::path::PathBuf>>>,
+    /// The document as last opened or saved, answers stripped. Comparing
+    /// the buffer against it — stripped the same way — is what "unsaved
+    /// changes" means: answers come and go by themselves and are not edits.
+    saved: Rc<RefCell<String>>,
 }
 
 fn build_window(app: &gtk::Application) {
@@ -102,6 +106,7 @@ fn build_window(app: &gtk::Application) {
         queued: Cell::new(false),
         last_answers: RefCell::new(HashMap::new()),
         file: Rc::new(RefCell::new(None)),
+        saved: Rc::new(RefCell::new(doc::strip_answers(STARTER))),
     });
 
     let ed = editor.clone();
@@ -125,6 +130,19 @@ fn build_window(app: &gtk::Application) {
     let ed = editor.clone();
     keys.connect_key_pressed(move |_, key, _, state| ed.key_pressed(key, state));
     view.add_controller(keys);
+
+    // Closing with unsaved changes asks first. The request is declined
+    // while the question is up; "Discard" then destroys the window, which
+    // does not ask again.
+    let ed = editor.clone();
+    window.connect_close_request(move |window| {
+        if !ed.is_dirty() {
+            return glib::Propagation::Proceed;
+        }
+        let window = window.clone();
+        ed.confirm_discard(move || window.destroy());
+        glib::Propagation::Stop
+    });
 
     buffer.set_text(STARTER);
     window.present();
@@ -183,22 +201,22 @@ impl Editor {
             let Some((start, body)) = lines.get(answer.line) else {
                 continue;
             };
-            let Some(arrow_byte) = body.find("=>") else {
+            // The engine's own range for this answer, in bytes of the line
+            // — never a search for `=>`, which a string literal can hold
+            // and a second statement can repeat.
+            let (from_byte, to_byte) = answer.span;
+            let Some(existing) = body.get(from_byte..to_byte) else {
                 continue;
             };
-            let after_arrow = start + body[..arrow_byte].chars().count() as i32 + 2;
-            let line_end = start + body.chars().count() as i32;
+            let from = start + body[..from_byte].chars().count() as i32;
+            let to = from + existing.chars().count() as i32;
             let replacement = if answer.text.is_empty() {
                 String::new()
             } else {
                 format!(" {}", answer.text)
             };
-            let existing: String = body
-                .chars()
-                .skip((after_arrow - start) as usize)
-                .collect();
             if existing != replacement {
-                edits.push((after_arrow, line_end, replacement));
+                edits.push((from, to, replacement));
             }
         }
         *self.last_answers.borrow_mut() = answers
@@ -243,8 +261,17 @@ impl Editor {
         self.buffer.remove_all_tags(&self.buffer.start_iter(), &self.buffer.end_iter());
         let info = doc::line_info(&text);
         let tokens = doc::tokens(&text);
-        let answer_lines: HashMap<usize, bool> =
-            answers.iter().map(|a| (a.line, a.is_error)).collect();
+        // Where the answers sit in the text as it is now, after the splice:
+        // parsed afresh, and paired in order with what was just evaluated.
+        let mut answer_spans: HashMap<usize, Vec<(usize, usize, bool)>> = HashMap::new();
+        for (slot, answer) in doc::answer_slot_list(&text).iter().zip(answers) {
+            if slot.line == answer.line {
+                answer_spans
+                    .entry(slot.line)
+                    .or_default()
+                    .push((slot.start, slot.end, answer.is_error));
+            }
+        }
 
         for (index, line) in text.lines().enumerate() {
             let Some(meta) = info.get(index) else { continue };
@@ -283,14 +310,19 @@ impl Editor {
                     if let Some((at, len)) = meta.redefines {
                         self.tag_utf16("redef", index, at, at + len, line);
                     }
-                    if let Some(is_error) = answer_lines.get(&index) {
-                        if let Some(arrow) = line.find("=>") {
-                            let from = line[..arrow].chars().count() as i32 + 2;
-                            self.tag_line(
-                                if *is_error { "err" } else { "answer" },
-                                index, from, chars, line,
-                            );
-                        }
+                    for &(from, to, is_error) in answer_spans.get(&index).into_iter().flatten() {
+                        let (Some(head), Some(body)) = (line.get(..from), line.get(from..to))
+                        else {
+                            continue;
+                        };
+                        let from = head.chars().count() as i32;
+                        self.tag_line(
+                            if is_error { "err" } else { "answer" },
+                            index,
+                            from,
+                            from + body.chars().count() as i32,
+                            line,
+                        );
                     }
                 }
                 BlockKind::Raw => {
@@ -430,8 +462,8 @@ impl Editor {
 
         // Over the answer: caret between `=>` and line end moves to the end
         // first, then the newline lands there.
-        if let Some(arrow_byte) = body.find("=>") {
-            let after_arrow = start + body[..arrow_byte].chars().count() as i32 + 2;
+        if let Some(slot) = doc::answer_slot_list(body).first() {
+            let after_arrow = start + body[..slot.start].chars().count() as i32;
             let line_end = start + body.chars().count() as i32;
             if caret >= after_arrow && caret < line_end {
                 self.buffer.place_cursor(&self.buffer.iter_at_offset(line_end));
@@ -505,19 +537,60 @@ impl Editor {
 
     // MARK: Files
 
+    /// Whether the buffer differs from what was last opened or saved.
+    fn is_dirty(&self) -> bool {
+        doc::strip_answers(&self.text()) != *self.saved.borrow()
+    }
+
+    /// Runs `then` at once if nothing is unsaved; otherwise asks, and runs
+    /// it only if the user chooses to discard the changes.
+    fn confirm_discard(&self, then: impl FnOnce() + 'static) {
+        if !self.is_dirty() {
+            then();
+            return;
+        }
+        let dialog = gtk::AlertDialog::builder()
+            .modal(true)
+            .message("Discard unsaved changes?")
+            .detail("This document has changes that have not been saved.")
+            .buttons(["Cancel", "Discard"])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+        dialog.choose(Some(&self.window), gio::Cancellable::NONE, move |choice| {
+            if matches!(choice, Ok(1)) {
+                then();
+            }
+        });
+    }
+
     fn open(&self) {
-        let dialog = gtk::FileDialog::new();
         let window = self.window.clone();
         let buffer = self.buffer.clone();
         let this_file = self.file.clone();
-        dialog.open(Some(&window), gio::Cancellable::NONE, move |result| {
-            let Ok(file) = result else { return };
-            let Some(path) = file.path() else { return };
-            let Ok(contents) = std::fs::read_to_string(&path) else { return };
-            // The buffer holds the document answer-free; the refresh that
-            // set_text triggers writes fresh answers straight back in.
-            buffer.set_text(&doc::strip_answers(&contents));
-            *this_file.borrow_mut() = Some(path);
+        let saved = self.saved.clone();
+        // Opening replaces the buffer, so unsaved changes are asked about
+        // before the file dialog appears.
+        self.confirm_discard(move || {
+            let dialog = gtk::FileDialog::new();
+            let parent = window.clone();
+            dialog.open(Some(&parent), gio::Cancellable::NONE, move |result| {
+                let Ok(file) = result else { return };
+                let Some(path) = file.path() else { return };
+                let contents = match std::fs::read_to_string(&path) {
+                    Ok(contents) => contents,
+                    Err(err) => {
+                        report(&window, "The document could not be opened", &path, &err);
+                        return;
+                    }
+                };
+                // The buffer holds the document answer-free; the refresh that
+                // set_text triggers writes fresh answers straight back in.
+                let stripped = doc::strip_answers(&contents);
+                buffer.set_text(&stripped);
+                *saved.borrow_mut() = stripped;
+                *this_file.borrow_mut() = Some(path);
+            });
         });
     }
 
@@ -530,19 +603,48 @@ impl Editor {
         let dialog = gtk::FileDialog::new();
         dialog.set_initial_name(Some("Untitled.calcium"));
         let window = self.window.clone();
+        let parent = self.window.clone();
         let text = self.text();
         let this_file = self.file.clone();
-        dialog.save(Some(&window), gio::Cancellable::NONE, move |result| {
+        let saved = self.saved.clone();
+        dialog.save(Some(&parent), gio::Cancellable::NONE, move |result| {
             let Ok(file) = result else { return };
             let Some(path) = file.path() else { return };
-            let _ = std::fs::write(&path, materialized(&text));
-            *this_file.borrow_mut() = Some(path);
+            // The path becomes this document's only once the write worked:
+            // adopting it regardless made every later save fail in silence.
+            match std::fs::write(&path, materialized(&text)) {
+                Ok(()) => {
+                    *saved.borrow_mut() = doc::strip_answers(&text);
+                    *this_file.borrow_mut() = Some(path);
+                }
+                Err(err) => report(&window, "The document could not be saved", &path, &err),
+            }
         });
     }
 
     fn write_to(&self, path: &std::path::Path) {
-        let _ = std::fs::write(path, materialized(&self.text()));
+        let text = self.text();
+        match std::fs::write(path, materialized(&text)) {
+            Ok(()) => *self.saved.borrow_mut() = doc::strip_answers(&text),
+            Err(err) => report(&self.window, "The document could not be saved", path, &err),
+        }
     }
+}
+
+/// Tells the user a file operation failed, and why. A save that fails
+/// without a word reads as a save that worked.
+fn report(
+    window: &gtk::ApplicationWindow,
+    message: &str,
+    path: &std::path::Path,
+    err: &std::io::Error,
+) {
+    gtk::AlertDialog::builder()
+        .modal(true)
+        .message(message)
+        .detail(format!("{}: {err}", path.display()))
+        .build()
+        .show(Some(window));
 }
 
 /// On disk a document carries its answers, and ends with a newline.

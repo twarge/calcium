@@ -301,4 +301,8 @@ pub struct Statement {
     pub stmt: Stmt,
     /// True when the source had `=>`. Only these produce output.
     pub arrow: bool,
+    /// Where the arrow and its answer sit, as byte offsets into the parsed
+    /// line: `(arrow start, arrow end, answer end)`. The answer runs from
+    /// the arrow to the statement's `;`, a trailing comment, or the end.
+    pub answer: Option<(usize, usize, usize)>,
 }

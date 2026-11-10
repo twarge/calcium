@@ -45,6 +45,86 @@ pub struct Answer {
     pub line: usize,
     pub text: String,
     pub is_error: bool,
+    /// Where on that line the answer is written: the byte range running
+    /// from just past the arrow to the end of whatever answer is there now.
+    pub span: (usize, usize),
+    /// The same range in UTF-16 units — what a text view counts in.
+    pub span_utf16: (usize, usize),
+}
+
+/// Where one `=>` and its answer sit in the source.
+///
+/// Read off the parser's tokens rather than searched for in the text, so
+/// an arrow inside a string literal is not an arrow, `⇒` is one, and each
+/// `;`-separated statement on a line owns its own answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AnswerSlot {
+    /// The source line, 0-based.
+    pub line: usize,
+    /// Byte offset of the arrow within that line.
+    pub arrow: usize,
+    /// Byte range of the answer: from just past the arrow to the
+    /// statement's `;`, the trailing comment, or the end of the line.
+    pub start: usize,
+    pub end: usize,
+}
+
+/// The slot of each statement in a block, `None` for one without an arrow.
+pub(crate) fn answer_slots(block: &Block, text: &str, statements: &[Statement]) -> Vec<Option<AnswerSlot>> {
+    // Each line's place in the joined text: where its trimmed content
+    // starts there, and how much leading whitespace the trim removed.
+    let mut places = Vec::with_capacity(block.lines.len());
+    let mut at = 0;
+    for (line, (code, whole)) in block.lines.iter().zip(contributions(block)) {
+        places.push((at, line.len() - line.trim_start().len(), code.len(), whole));
+        at += code.len() + 1;
+    }
+    statements
+        .iter()
+        .map(|statement| {
+            let (arrow, start, end) = statement.answer?;
+            let index = places
+                .iter()
+                .position(|&(from, _, len, _)| arrow >= from && start <= from + len)?;
+            let (from, lead, len, whole) = places[index];
+            let line = &block.lines[index];
+            // An answer never runs past its own line.
+            let mut end = end.clamp(start, from + len);
+            let slot_end = if end == from + len && whole {
+                // To the very end, trailing whitespace included.
+                line.len()
+            } else if end == from + len {
+                // Up to the comment this line ends with.
+                lead + len
+            } else {
+                // A comment follows: leave the space before it alone.
+                if text[end..].starts_with('#') {
+                    end = start + text[start..end].trim_end().len();
+                }
+                lead + end - from
+            };
+            Some(AnswerSlot {
+                line: block.line + index,
+                arrow: lead + arrow - from,
+                start: lead + start - from,
+                end: slot_end,
+            })
+        })
+        .collect()
+}
+
+/// Every answer slot in a document, in source order, without evaluating.
+pub fn answer_slot_list(source: &str) -> Vec<AnswerSlot> {
+    let mut out = Vec::new();
+    for block in split_blocks(source) {
+        if block.kind != BlockKind::Code {
+            continue;
+        }
+        let text = joined(&block);
+        let statements = parse_line(&text);
+        out.extend(answer_slots(&block, &text, &statements).into_iter().flatten());
+    }
+    out
 }
 
 #[derive(Clone, Debug, Default)]
@@ -176,7 +256,7 @@ fn classify(line: &str) -> BlockKind {
     // sentence-punctuation test below, which would otherwise read the `?` as
     // the end of a question.
     let outside = crate::check::outside_code_spans(trimmed);
-    if outside.contains("=>") || outside.contains("#?") {
+    if outside.contains("=>") || outside.contains('⇒') || outside.contains("#?") {
         return BlockKind::Code;
     }
     // Otherwise: prose if it ends with sentence punctuation.
@@ -195,12 +275,31 @@ fn classify(line: &str) -> BlockKind {
     BlockKind::Code
 }
 
-/// Joins a block's lines into one logical line for the parser.
-fn joined(block: &Block) -> String {
+/// What each line of a block contributes to the joined text: its code,
+/// trimmed, and whether that runs to the end of the line. A comment on a
+/// line that is continued below ends at that line, so it is left out —
+/// joined in, it would swallow every continuation line after it.
+fn contributions(block: &Block) -> Vec<(&str, bool)> {
+    let last = block.lines.len() - 1;
     block
         .lines
         .iter()
-        .map(|l| l.trim())
+        .enumerate()
+        .map(|(index, line)| {
+            let trimmed = line.trim();
+            match crate::lexer::comment_byte(trimmed) {
+                Some(at) if index < last => (trimmed[..at].trim_end(), false),
+                _ => (trimmed, true),
+            }
+        })
+        .collect()
+}
+
+/// Joins a block's lines into one logical line for the parser.
+pub(crate) fn joined(block: &Block) -> String {
+    contributions(block)
+        .iter()
+        .map(|(code, _)| *code)
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -240,11 +339,10 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
 
         let text = joined(block);
         let statements = parse_line(&text);
-        // Track which `=>` on this block each statement belongs to.
-        let arrow_lines = arrow_lines(block);
-        let mut arrow_index = 0;
+        // Where each statement's answer goes.
+        let slots = answer_slots(block, &text, &statements);
 
-        for statement in statements {
+        for (statement, slot) in statements.into_iter().zip(slots) {
             // A fresh work budget per statement: one runaway answer becomes
             // an error while the rest of the document still evaluates.
             crate::eval::refuel();
@@ -312,11 +410,15 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
             }
 
             if statement.arrow {
-                let line = arrow_lines
-                    .get(arrow_index)
-                    .copied()
-                    .unwrap_or(block.line + block.lines.len() - 1);
-                arrow_index += 1;
+                // A statement with an arrow always has a slot; the fallback
+                // is the end of the block's last line.
+                let slot = slot.unwrap_or_else(|| {
+                    let last = block.lines.len() - 1;
+                    let len = block.lines[last].len();
+                    AnswerSlot { line: block.line + last, arrow: len, start: len, end: len }
+                });
+                let source_line = &block.lines[slot.line - block.line];
+                let utf16 = |byte: usize| source_line[..byte].encode_utf16().count();
                 let value = result.unwrap_or_else(|| Expr::Error("no result".to_string()));
                 // An error anywhere in the result makes the whole answer an
                 // error, and the message alone is far more use than the
@@ -326,7 +428,9 @@ pub fn evaluate_in(source: &str, env: &mut Env) -> Document {
                     None => render_answer(&value, env),
                 };
                 answers.push(Answer {
-                    line,
+                    line: slot.line,
+                    span: (slot.start, slot.end),
+                    span_utf16: (utf16(slot.start), utf16(slot.end)),
                     text,
                     is_error: holds_error(&value),
                 });
@@ -428,17 +532,6 @@ pub(crate) fn holds_error(expr: &Expr) -> bool {
     }
 }
 
-/// Source line numbers of each `=>` inside a block.
-fn arrow_lines(block: &Block) -> Vec<usize> {
-    let mut out = Vec::new();
-    for (offset, line) in block.lines.iter().enumerate() {
-        for _ in line.matches("=>") {
-            out.push(block.line + offset);
-        }
-    }
-    out
-}
-
 fn apply_directive(env: &mut Env, name: &str, value: Option<&Expr>) {
     // Directives change how bodies evaluate without touching a definition.
     env.clear_value_cache();
@@ -524,12 +617,12 @@ fn apply_culture(fmt: &mut NumFormat, culture: &str) {
 pub fn rewrite(source: &str) -> String {
     let document = evaluate(source);
     let mut lines: Vec<String> = source.lines().map(|l| l.to_string()).collect();
-    for answer in &document.answers {
+    // Back to front, so a line holding several answers keeps the earlier
+    // spans valid while the later ones are written.
+    for answer in document.answers.iter().rev() {
         if let Some(line) = lines.get_mut(answer.line) {
-            if let Some(at) = line.find("=>") {
-                let (head, _) = line.split_at(at);
-                *line = format!("{head}=> {}", answer.text);
-            }
+            let (start, end) = answer.span;
+            line.replace_range(start..end, &format!(" {}", answer.text));
         }
     }
     lines.join("\n")
@@ -656,23 +749,12 @@ pub fn line_kinds(source: &str) -> Vec<BlockKind> {
 /// here rather than in the UI keeps one implementation of "which `=>` is real",
 /// including the rule that an arrow inside `inline code` is prose.
 pub fn strip_answers(source: &str) -> String {
-    let kinds = line_kinds(source);
-    let mut out: Vec<String> = Vec::new();
-    for (index, line) in source.lines().enumerate() {
-        // An arrow in a fence is verbatim foreign text — Typst writes its
-        // lambdas with `=>` — not an answer to strip.
-        if kinds.get(index) == Some(&BlockKind::Raw)
-            || !crate::check::outside_code_spans(line).contains("=>")
-        {
-            out.push(line.to_string());
-            continue;
-        }
-        match line.find("=>") {
-            Some(at) => {
-                let head = &line[..at];
-                out.push(format!("{head}=>").trim_end().to_string());
-            }
-            None => out.push(line.to_string()),
+    let mut out: Vec<String> = source.lines().map(|l| l.to_string()).collect();
+    // Slots come from code blocks only, so a fence's arrows — Typst writes
+    // its lambdas with `=>` — and prose about the operator are left alone.
+    for slot in answer_slot_list(source).iter().rev() {
+        if let Some(line) = out.get_mut(slot.line) {
+            line.replace_range(slot.start..slot.end, "");
         }
     }
     let mut text = out.join("\n");
@@ -1318,4 +1400,176 @@ mod tests {
         let document = evaluate("    @unit = burrito * taco\n    taco => 0");
         assert_eq!(document.answers[0].text, "1 taco");
     }
+    #[test]
+    fn an_arrow_inside_a_string_is_not_the_arrow() {
+        let once = rewrite("    s = \"a => b\" =>");
+        assert_eq!(once, "    s = \"a => b\" => \"a => b\"");
+        assert_eq!(rewrite(&once), once);
+        assert_eq!(strip_answers(&once), "    s = \"a => b\" =>");
+    }
+
+    #[test]
+    fn each_statement_on_a_line_keeps_its_own_answer() {
+        let once = rewrite("    1+1 => ; 2+2 =>");
+        assert_eq!(once, "    1+1 => 2; 2+2 => 4");
+        assert_eq!(rewrite(&once), once);
+        assert_eq!(
+            rewrite("    a = 3; b = a*2 => 7; c = b + 1 =>"),
+            "    a = 3; b = a*2 => 6; c = b + 1 => 7"
+        );
+        assert_eq!(strip_answers(&once), "    1+1 =>; 2+2 =>");
+    }
+
+    #[test]
+    fn a_comment_after_an_answer_survives() {
+        assert_eq!(rewrite("    2+2 => 5 # note"), "    2+2 => 4 # note");
+        assert_eq!(rewrite("    2+2 => # note"), "    2+2 => 4 # note");
+        assert_eq!(strip_answers("    2+2 => 4 # note"), "    2+2 => # note");
+    }
+
+    #[test]
+    fn the_unicode_arrow_is_answered_too() {
+        assert_eq!(rewrite("    3+3 ⇒ 7"), "    3+3 ⇒ 6");
+        assert_eq!(rewrite("3+3 ⇒"), "3+3 ⇒ 6");
+    }
+
+    #[test]
+    fn answer_spans_count_utf16_and_follow_continuation_lines() {
+        let answers = evaluate("    \"🚀\" => old\n    x = 1\n      + 2 =>   \n").answers;
+        // `    "🚀" =>` is 4 + 1 + 2 + 1 + 1 + 2 = 11 UTF-16 units.
+        assert_eq!((answers[0].line, answers[0].span_utf16), (0, (11, 15)));
+        // The arrow is on the continuation line; trailing blanks belong to
+        // the answer.
+        assert_eq!((answers[1].line, answers[1].span), (2, (12, 15)));
+    }
+
+    /// The answer text of a one-line document.
+    fn answer(line: &str) -> String {
+        evaluate(&format!("    {line} =>")).answers[0].text.clone()
+    }
+
+    /// Runs on a main-thread-sized stack. Evaluation recurses to its depth
+    /// cap by design, and unoptimised frames at that depth outgrow the
+    /// 2 MiB a test thread gets; optimised, as the apps build the engine,
+    /// the same documents fit a 512 KiB thread.
+    fn on_a_full_stack<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+        std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(work)
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    #[test]
+    fn min_is_the_minute_and_still_the_function() {
+        assert_eq!(answer("90 km / (45 min) in km/hr"), "120 km/hr");
+        assert_eq!(answer("2 hr in min"), "120 min");
+        assert_eq!(answer("min(3, 4)"), "3");
+        assert_eq!(answer("min([5, 2, 9])"), "2");
+    }
+
+    #[test]
+    fn min_and_max_compare_quantities_across_units() {
+        assert_eq!(answer("min(2 min, 90 s)"), "90 s");
+        assert_eq!(answer("max(2 min, 90 s)"), "2 min");
+        assert_eq!(answer("max(1 km, 500 m, 2 mi)"), "2 mi");
+        assert_eq!(answer("min([3 ft, 1 m, 30 in])"), "30 in");
+        assert_eq!(answer("max(-2 kg, -3 kg)"), "-2 kg");
+        assert_eq!(answer("max(60 mph, 100 km/hr)"), "100 km/hr");
+        // Nothing to compare: different dimensions, or an unknown.
+        assert_eq!(answer("min(2 m, 3 s)"), "min(2 m, 3 s)");
+        assert_eq!(answer("min(2 x, 3 x)"), "min(2 x, 3 x)");
+        // And an uncomparable call is left standing even where the
+        // document gives the solver something to say about `min`.
+        let answers = evaluate("    t = 5 min\n    min(t, 200 s) =>\n    min(3, 2 m) =>").answers;
+        assert_eq!(answers[0].text, "200 s");
+        assert_eq!(answers[1].text, "min(3, 2 m)");
+    }
+
+    #[test]
+    fn unbounded_numeric_work_is_refused_not_attempted() {
+        assert!(answer("choose(10^9, 5*10^8)").contains("too large"));
+        assert_eq!(answer("choose(52, 5)"), "2,598,960");
+        assert_eq!(answer("(9^4096)^4096"), "Infinity");
+        assert_eq!(answer("sum(x, x = 1..10^10)"), "sum(x, x = 1..10^10)");
+        assert_eq!(answer("sum(x, x = 1..1000)"), "500,500");
+        assert!(answer("der(x^2, x, 10^10)").contains("order above"));
+        assert!(answer("taylor(sin(x), x=0, 10^8)").contains("order above"));
+    }
+
+    #[test]
+    fn a_runaway_plot_stops_after_a_few_dry_samples() {
+        let started = std::time::Instant::now();
+        on_a_full_stack(|| {
+            evaluate("    fib(n) = if nn < 2 then n else fib(n - 1) + fib(n - 2)\n    plot(fib(x), x = 0..30)\n")
+        });
+        // 256 full tanks took minutes; a handful takes well under this
+        // even unoptimised.
+        assert!(started.elapsed() < std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn long_chains_are_an_error_not_a_stack_overflow() {
+        for op in [" mod 5", " | 1", " & 1", " || a", " && a", " in m", "[0]"] {
+            let text = answer(&format!("1{}", op.repeat(20_000)));
+            assert_eq!(text, "nested too deeply", "{op}");
+        }
+        assert!(answer("reduce(g, 1..20000)").contains("too many items"));
+        assert_eq!(answer("reduce(g, [1, 2, 3])"), "g(g(1, 2), 3)");
+        assert_eq!(answer("7 mod 5 mod 3"), "2");
+    }
+
+    #[test]
+    fn a_definition_chain_past_the_depth_cap_is_an_error() {
+        let mut source = String::from("    b0 = 100\n");
+        for i in 1..=300 {
+            source.push_str(&format!("    b{i} = b{} + {i}\n", i - 1));
+        }
+        source.push_str("    b300 =>\n    b100 =>\n");
+        let answers = on_a_full_stack(move || evaluate(&source).answers);
+        assert!(answers[0].is_error, "{}", answers[0].text);
+        assert_eq!(answers[1].text, "5,150");
+    }
+
+    #[test]
+    fn large_numeric_determinants_are_exact() {
+        // Independently, by exact Fraction elimination in Python.
+        let m = "[7, -3, 2, 0, 1, 4, -2, 5; 1, 6, -4, 3, 0, 2, 8, -1; -5, 2, 9, 1, 3, -6, 0, 4; \
+                 2, 0, 1, -8, 5, 3, 7, -2; 4, -1, 0, 6, -9, 1, 2, 3; 0, 5, -7, 2, 4, 8, -3, 1; \
+                 3, 8, 6, -4, 2, 0, 5, -7; -2, 4, 3, 5, -1, 7, 1, 6]";
+        assert_eq!(answer(&format!("|{m}|")), "14,504,256");
+        assert_eq!(answer("|[a, b; c, d]|"), "a*d - b*c");
+        assert_eq!(answer("|[1 m, 2 m; 3 m, 4 m]|"), "-2 m^2");
+    }
+
+    #[test]
+    fn exact_numbers_beyond_f64_still_print() {
+        assert_eq!(answer("10^400"), "1e400");
+        assert_eq!(answer("1/10^400"), "1e-400");
+        assert_eq!(answer("-10^400 / 3"), "-3.3333e399");
+        assert_eq!(answer("1e99999999999999999999"), "Infinity");
+        assert_eq!(answer("1.5e-9223372036854775807"), "0");
+    }
+
+    #[test]
+    fn a_comment_ends_at_its_own_line_of_a_continued_statement() {
+        assert_eq!(rewrite("    y = 1 # one\n      + 2\n    y =>"), "    y = 1 # one\n      + 2\n    y => 3");
+        assert_eq!(rewrite("    w = 4 # c\n      * 2 => 1 # d"), "    w = 4 # c\n      * 2 => 8 # d");
+    }
+
+    #[test]
+    fn stripping_sees_through_whatever_answers_are_written() {
+        // What an editor's "unsaved changes" test rests on: the stripped
+        // text is the same before and after answers are spliced in.
+        let source = "# Title\n\nSome prose about `=>` here.\n\n    a = 3; b = a*2 => ; c = b + 1 =>\n    s = \"x => y\" => stale # note\n    m = [1, 2; 3, 4] =>   \n    |m| ⇒\n    total = a\n      + b => 0\n";
+        // `rewrite` stands in for the splice; it alone drops the final
+        // newline, which is put back for the comparison.
+        let spliced = |text: &str| rewrite(text) + "\n";
+        let bare = strip_answers(source);
+        assert_eq!(strip_answers(&spliced(source)), bare);
+        assert_eq!(strip_answers(&spliced(&bare)), bare);
+        assert_eq!(strip_answers(&bare), bare);
+    }
+
 }

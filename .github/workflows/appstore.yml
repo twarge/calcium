@@ -82,7 +82,8 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           mkdir -p ~/private_keys
-          printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          chmod 700 ~/private_keys
+          ( umask 077; printf '%s' "$ASC_KEY_P8" > ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 )
           # Shape checks only — never prints secret values.
           [ "${#ASC_KEY_ID}" -eq 10 ] || { echo "::error::ASC_KEY_ID length is ${#ASC_KEY_ID}, expected 10"; exit 1; }
           [ "${#ASC_ISSUER_ID}" -eq 36 ] || { echo "::error::ASC_ISSUER_ID length is ${#ASC_ISSUER_ID}, expected a 36-char UUID"; exit 1; }
@@ -201,3 +202,21 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      # Whatever happened above. The API key carries the Admin role and the
+      # keychain a signing identity; neither may outlive the job on a runner
+      # that is reused — the pull-request CI builds on the same label.
+      - name: Remove signing secrets
+        if: always()
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          rm -f ~/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          rmdir ~/private_keys 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/apple-development.p12" build-exportOptions.plist
+          if [ -f "$RUNNER_TEMP/app-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+          fi
+          # The install step made the temporary keychain the whole search
+          # list; put the login keychain back for whatever runs here next.
+          security list-keychains -d user -s login.keychain-db || true

@@ -23,49 +23,29 @@ pub struct Expectation {
 /// after them, and arrows inside `inline code`, which the prose uses when
 /// talking *about* the operator rather than applying it.
 pub fn expectations(source: &str) -> Vec<Expectation> {
-    let kinds = doc::line_kinds(source);
-    let mut out = Vec::new();
-    for (index, line) in source.lines().enumerate() {
-        // An arrow inside a fenced block is foreign text — a Typst lambda,
-        // not a worked example.
-        if kinds.get(index) == Some(&doc::BlockKind::Raw) {
-            continue;
-        }
-        if !outside_code_spans(line).contains("=>") {
-            continue;
-        }
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out: Vec<Expectation> = Vec::new();
+    // Slots exist only in code blocks, which already excludes fences and
+    // prose that merely mentions the operator.
+    for slot in doc::answer_slot_list(source) {
         // A line may hold several `;`-separated statements, each with its own
-        // arrow. Only the first is attributed to this line, matching how the
-        // document layer reports answers.
-        let Some(at) = line.find("=>") else { continue };
-        let (head, tail) = line.split_at(at);
-        let rest = &tail[2..];
-        let expected = rest[..statement_end(rest)].trim().to_string();
+        // arrow. Only the first is attributed to this line, matching how
+        // `check_source` pairs answers.
+        if out.last().is_some_and(|last| last.line == slot.line) {
+            continue;
+        }
+        let Some(line) = lines.get(slot.line) else { continue };
+        let expected = line[slot.start..slot.end].trim().to_string();
         if expected.is_empty() {
             continue;
         }
         out.push(Expectation {
-            line: index,
-            source: head.trim().to_string(),
+            line: slot.line,
+            source: line[..slot.arrow].trim().to_string(),
             expected,
         });
     }
     out
-}
-
-/// Where the first statement's answer ends: at a top-level `;`, but not one
-/// inside a matrix like `[1, 3; 2, 4]`.
-fn statement_end(text: &str) -> usize {
-    let mut depth = 0i32;
-    for (offset, ch) in text.char_indices() {
-        match ch {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ';' if depth <= 0 => return offset,
-            _ => {}
-        }
-    }
-    text.len()
 }
 
 /// Blanks out `` `inline code` `` spans.

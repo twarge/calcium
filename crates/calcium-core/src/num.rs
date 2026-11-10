@@ -206,7 +206,11 @@ impl Num {
             return Num::infinity();
         }
         if let (Num::Rat(base), Some(e)) = (self, other.to_i64()) {
-            if e.unsigned_abs() <= 4096 {
+            // Exact only while the result stays a number someone could
+            // read: the exponent alone does not bound it — `(9^4096)^4096`
+            // is fifty million bits — so the base's size counts too.
+            let bits = base.numer().bits().max(base.denom().bits());
+            if e.unsigned_abs() <= 4096 && bits.saturating_mul(e.unsigned_abs()) <= MAX_POWER_BITS {
                 let magnitude = num_traits::pow::pow(base.clone(), e.unsigned_abs() as usize);
                 return Num::Rat(if e < 0 {
                     magnitude.recip()
@@ -311,11 +315,45 @@ impl PartialEq for Num {
     }
 }
 
+/// `r` as a mantissa in `[1, 10)` and a power of ten, exactly.
+fn exact_scientific(r: &BigRational) -> (i64, Num) {
+    let digits = |n: &BigInt| n.abs().to_string().len() as i64;
+    let ten = BigInt::from(10);
+    let scaled = |exp: i64| -> BigRational {
+        let power = BigRational::from_integer(num_traits::pow::pow(ten.clone(), exp.unsigned_abs() as usize));
+        if exp >= 0 {
+            r / power
+        } else {
+            r * power
+        }
+    };
+    // Within one of the truth; the comparison below settles it.
+    let mut exp = digits(r.numer()) - digits(r.denom());
+    let one = BigRational::from_integer(BigInt::from(1));
+    let mut mantissa = scaled(exp);
+    if mantissa.abs() < one {
+        exp -= 1;
+        mantissa = scaled(exp);
+    } else if mantissa.abs() >= BigRational::from_integer(ten.clone()) {
+        exp += 1;
+        mantissa = scaled(exp);
+    }
+    (exp, Num::Rat(mantissa))
+}
+
+/// The largest exact power, in bits of numerator or denominator — about
+/// twenty thousand digits. Past it a power is computed in floating point.
+const MAX_POWER_BITS: u64 = 1 << 16;
+
 /// `base^(p/q)` when the result is itself rational — e.g. `(4/9)^(1/2)`.
 fn exact_root(base: &BigRational, exp: &BigRational) -> Option<BigRational> {
     let q = exp.denom().to_u32()?;
     let p = exp.numer().to_i32()?;
     if q == 0 || q > 64 || p.unsigned_abs() > 1024 {
+        return None;
+    }
+    let bits = base.numer().bits().max(base.denom().bits());
+    if bits.saturating_mul(u64::from(p.unsigned_abs())) > MAX_POWER_BITS {
         return None;
     }
     if base.is_negative() && q % 2 == 0 {
@@ -410,6 +448,10 @@ impl Num {
         if magnitude != 0.0 && (magnitude >= SCI_HIGH || magnitude < SCI_LOW) {
             return self.format_scientific(fmt);
         }
+        // Exact, nonzero, and too small for an f64 to tell from zero.
+        if magnitude == 0.0 && !self.is_zero() {
+            return self.format_scientific(fmt);
+        }
         self.format_plain(fmt)
     }
 
@@ -433,8 +475,15 @@ impl Num {
 
     fn format_scientific(&self, fmt: &NumFormat) -> String {
         let v = self.to_f64();
-        let exp = v.abs().log10().floor() as i32;
-        let mantissa = Num::from_f64(v / 10f64.powi(exp));
+        let (exp, mantissa) = match self {
+            // An exact number outside what an f64 holds — `10^400`, or one
+            // too small — has no float to take a logarithm of. Count digits.
+            Num::Rat(r) if !r.is_zero() && (!v.is_finite() || v == 0.0) => exact_scientific(r),
+            _ => {
+                let exp = v.abs().log10().floor() as i64;
+                (exp, Num::from_f64(v / 10f64.powi(exp as i32)))
+            }
+        };
         let (negative, int_digits, frac_digits) = mantissa.decimal_digits(fmt.precision);
         let mut out = String::new();
         if negative {

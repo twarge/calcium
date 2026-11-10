@@ -115,10 +115,15 @@ struct EditorViewIOS: UIViewRepresentable {
             guard let url = fileURL, let state = DocumentViewState.load(from: url) else {
                 return
             }
+            savedScale = state.scale
             let length = (textView.text as NSString).length
             textView.selectedRange = NSRange(
                 location: min(max(0, state.cursor), length), length: 0)
         }
+
+        /// The zoom the Mac saved with this file. iOS has no zoom of its
+        /// own, and writing 1 back would undo the Mac's on a shared file.
+        private var savedScale: Double = 1
 
         private func persistViewStateSoon(for textView: UITextView) {
             statePersist?.cancel()
@@ -126,7 +131,7 @@ struct EditorViewIOS: UIViewRepresentable {
                 try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled, let self, let textView,
                       let url = self.fileURL else { return }
-                DocumentViewState(scale: 1, cursor: textView.selectedRange.location)
+                DocumentViewState(scale: self.savedScale, cursor: textView.selectedRange.location)
                     .save(to: url)
             }
         }
@@ -184,7 +189,7 @@ struct EditorViewIOS: UIViewRepresentable {
             let text = textView.text as NSString
             guard caret <= text.length else { return }
             var lineStart = 0
-            text.getLineStart(
+            text.getEngineLineStart(
                 &lineStart, end: nil, contentsEnd: nil,
                 for: NSRange(location: caret, length: 0))
             let index = text.substring(to: lineStart).components(separatedBy: "\n").count - 1
@@ -301,7 +306,7 @@ struct EditorViewIOS: UIViewRepresentable {
             }
             var lineStart = 0
             var contentsEnd = 0
-            text.getLineStart(
+            text.getEngineLineStart(
                 &lineStart, end: nil, contentsEnd: &contentsEnd,
                 for: NSRange(location: caret, length: 0))
             let line = text.substring(
@@ -323,7 +328,7 @@ struct EditorViewIOS: UIViewRepresentable {
         /// Which line a character offset sits on.
         private func lineNumber(at location: Int, in text: NSString) -> Int {
             var lineStart = 0
-            text.getLineStart(
+            text.getEngineLineStart(
                 &lineStart, end: nil, contentsEnd: nil,
                 for: NSRange(location: min(location, text.length), length: 0))
             return text.substring(to: lineStart).components(separatedBy: "\n").count - 1
@@ -340,15 +345,17 @@ struct EditorViewIOS: UIViewRepresentable {
 
             var lineStart = 0
             var contentsEnd = 0
-            text.getLineStart(
+            text.getEngineLineStart(
                 &lineStart, end: nil, contentsEnd: &contentsEnd,
                 for: NSRange(location: location, length: 0))
             let body = text.substring(
                 with: NSRange(location: lineStart, length: contentsEnd - lineStart))
-            guard let arrow = body.range(of: "=>") else { return nil }
+            // Asked of the engine's parser, on this line alone: an arrow
+            // inside a string literal is not one, and `⇒` is.
+            guard let slot = Engine.answerSlots(of: body).first else { return nil }
 
-            let arrowStart = lineStart + body.distance(from: body.startIndex, to: arrow.lowerBound)
-            let afterArrow = lineStart + body.distance(from: body.startIndex, to: arrow.upperBound)
+            let arrowStart = lineStart + slot.arrow
+            let afterArrow = lineStart + slot.start
             guard contentsEnd > afterArrow else { return nil }
             return (arrowStart, afterArrow, contentsEnd)
         }
@@ -444,13 +451,8 @@ struct EditorViewIOS: UIViewRepresentable {
             for answer in answers {
                 guard answer.line >= 0, answer.line < lines.count else { continue }
                 let line = lines[answer.line]
-                let body = text.substring(with: line)
-                guard let arrow = body.range(of: "=>") else { continue }
-                let afterArrow =
-                    line.location + body.distance(from: body.startIndex, to: arrow.upperBound)
-                let existing = NSRange(
-                    location: afterArrow, length: NSMaxRange(line) - afterArrow)
-                let replacement = answer.text.isEmpty ? "" : " " + answer.text
+                guard let existing = answer.range(on: line) else { continue }
+                let replacement = answer.replacement
                 if text.substring(with: existing) != replacement {
                     edits.append((existing, replacement))
                 }
@@ -483,17 +485,7 @@ struct EditorViewIOS: UIViewRepresentable {
 
             let updated = storage.string as NSString
             let freshLines = lineRanges(in: updated)
-            answerRegions = answers.compactMap { answer in
-                guard answer.line >= 0, answer.line < freshLines.count else { return nil }
-                let line = freshLines[answer.line]
-                let body = updated.substring(with: line)
-                guard let arrow = body.range(of: "=>") else { return nil }
-                let afterArrow =
-                    line.location + body.distance(from: body.startIndex, to: arrow.upperBound)
-                let length = NSMaxRange(line) - afterArrow
-                guard length > 0 else { return nil }
-                return (NSRange(location: afterArrow, length: length), answer.error)
-            }
+            answerRegions = Answer.regions(of: answers, lines: freshLines)
 
             if !edits.isEmpty {
                 selection.location = max(0, min(selection.location, updated.length))
@@ -779,7 +771,7 @@ struct EditorViewIOS: UIViewRepresentable {
             let target = lines.indices.contains(line) ? (lines[line].block ?? line) : line
             let start = startOfLine(target, in: text)
             let targetLine = text.substring(
-                with: text.lineRange(for: NSRange(location: start, length: 0)))
+                with: text.engineLineRange(for: NSRange(location: start, length: 0)))
             // Indented like the line it lands above; a directive needs the
             // indent to read as a calculation, so prose gets the idiomatic
             // four spaces.
@@ -800,19 +792,8 @@ struct EditorViewIOS: UIViewRepresentable {
         /// UTF-16 offset at which line `index` starts. Past the last real
         /// line — the caret after a trailing newline — it is the text's end.
         private func startOfLine(_ index: Int, in text: NSString) -> Int {
-            var offset = text.length
-            var line = 0
-            text.enumerateSubstrings(
-                in: NSRange(location: 0, length: text.length),
-                options: [.byLines, .substringNotRequired]
-            ) { _, range, _, stop in
-                if line == index {
-                    offset = range.location
-                    stop.pointee = true
-                }
-                line += 1
-            }
-            return offset
+            let lines = text.engineLineRanges()
+            return lines.indices.contains(index) ? lines[index].location : text.length
         }
 
         private func toggledComment(_ line: String) -> String? {
@@ -850,7 +831,7 @@ struct EditorViewIOS: UIViewRepresentable {
         ) {
             let selection = textView.selectedRange
             let text = textView.text as NSString
-            let span = text.lineRange(for: selection)
+            let span = text.engineLineRange(for: selection)
             let block = text.substring(with: span)
             let endsWithNewline = block.hasSuffix("\n")
             var lines = block.components(separatedBy: "\n")
@@ -967,8 +948,8 @@ struct EditorViewIOS: UIViewRepresentable {
             let text = storage.string as NSString
             let tokenLines = Engine.tokens(of: storage.string)
             var index = 0
-            text.enumerateSubstrings(in: whole, options: [.byLines, .substringNotRequired]) {
-                _, lineRange, _, _ in
+            text.enumerateEngineLines {
+                lineRange in
                 defer { index += 1 }
                 let line = lines.indices.contains(index) ? lines[index] : nil
                 switch line?.kind ?? .code {
@@ -1127,22 +1108,8 @@ struct EditorViewIOS: UIViewRepresentable {
         // MARK: Line geometry
 
         private func lineRanges(in text: NSString) -> [NSRange] {
-            var ranges: [NSRange] = []
-            var start = 0
-            while start <= text.length {
-                var lineEnd = 0
-                var contentsEnd = 0
-                text.getLineStart(
-                    nil, end: &lineEnd, contentsEnd: &contentsEnd,
-                    for: NSRange(location: start, length: 0))
-                ranges.append(NSRange(location: start, length: contentsEnd - start))
-                if lineEnd == start { break }
-                start = lineEnd
-            }
-            if ranges.count > 1, let last = ranges.last, last.length == 0 {
-                ranges.removeLast()
-            }
-            return ranges
+            // Lines as the engine counts them — see `engineLineRanges`.
+            text.engineLineRanges()
         }
 
         private func lineIndex(of location: Int, in lines: [NSRange]) -> Int? {

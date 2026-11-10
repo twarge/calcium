@@ -6,6 +6,49 @@ struct Answer: Decodable, Equatable {
     let line: Int
     let text: String
     let error: Bool
+    /// The UTF-16 range on that line the answer occupies: from just past
+    /// the arrow to the end of whatever answer is there now. From the
+    /// engine's parser — never found by searching the text for `=>`, which
+    /// a string literal can contain and a second statement can repeat.
+    let start: Int
+    let end: Int
+
+    /// What goes into that range.
+    var replacement: String { text.isEmpty ? "" : " " + text }
+
+    /// The range to replace, on a line occupying `line` of the text, or
+    /// `nil` if it does not fit — the text is not what was evaluated.
+    func range(on line: NSRange) -> NSRange? {
+        guard start >= 0, start <= end, end <= line.length else { return nil }
+        return NSRange(location: line.location + start, length: end - start)
+    }
+
+    /// Where each answer sits once every replacement is written, given the
+    /// line ranges of the spliced text. Several answers can share a line,
+    /// so each one shifts by what the earlier ones on its line changed.
+    static func regions(
+        of answers: [Answer], lines: [NSRange]
+    ) -> [(range: NSRange, isError: Bool)] {
+        var shift: [Int: Int] = [:]
+        return answers.compactMap { answer in
+            guard lines.indices.contains(answer.line) else { return nil }
+            let line = lines[answer.line]
+            let length = (answer.replacement as NSString).length
+            let moved = shift[answer.line, default: 0]
+            shift[answer.line] = moved + length - (answer.end - answer.start)
+            let location = line.location + answer.start + moved
+            guard length > 0, location + length <= NSMaxRange(line) else { return nil }
+            return (NSRange(location: location, length: length), answer.error)
+        }
+    }
+}
+
+/// Where one answer sits on a line, UTF-16: its arrow and its range.
+struct AnswerSlot: Decodable, Equatable {
+    let line: Int
+    let arrow: Int
+    let start: Int
+    let end: Int
 }
 
 enum LineKind: String, Decodable {
@@ -173,6 +216,16 @@ enum Engine {
         return hits
     }
 
+    /// Where the answers of `source` sit, parsed but not evaluated — cheap
+    /// enough to ask about a single line on a keystroke.
+    static func answerSlots(of source: String) -> [AnswerSlot] {
+        guard let json = call(calcium_answer_slots, source),
+              let data = json.data(using: .utf8),
+              let slots = try? JSONDecoder().decode([AnswerSlot].self, from: data)
+        else { return [] }
+        return slots
+    }
+
     /// Answers for every `=>` in the document, in source order.
     static func evaluate(_ source: String) -> [Answer] {
         guard let json = call(calcium_evaluate, source),
@@ -238,10 +291,97 @@ enum Engine {
         _ function: (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?,
         _ source: String
     ) -> String? {
-        source.withCString { input in
+        // The C ABI reads to the first NUL, so a document holding one would
+        // come back cut short there — and a save would write the stump.
+        // Failing here leaves every caller on its raw-text fallback.
+        guard !source.utf8.contains(0) else { return nil }
+        return source.withCString { input in
             guard let raw = function(input) else { return nil }
             defer { calcium_string_free(raw) }
             return String(cString: raw)
         }
+    }
+}
+
+extension NSString {
+    /// The contents range of every line, with lines counted as the engine
+    /// counts them: broken at `\n` alone, a `\r` before it left out.
+    ///
+    /// Foundation's own line APIs also break at U+2028, U+2029, U+0085 and a
+    /// lone `\r` — a soft break from Ctrl-Return or pasted from a word
+    /// processor — and one of those would put every engine line index below
+    /// it off by one: answers written after the wrong arrow, colours on the
+    /// wrong lines. A trailing empty line is not a line, as in the engine.
+    func engineLineRanges() -> [NSRange] {
+        var ranges: [NSRange] = []
+        var start = 0
+        while true {
+            let newline = range(
+                of: "\n", options: .literal,
+                range: NSRange(location: start, length: length - start))
+            guard newline.location != NSNotFound else {
+                ranges.append(NSRange(location: start, length: length - start))
+                break
+            }
+            var end = newline.location
+            if end > start, character(at: end - 1) == 0x0D { end -= 1 }
+            ranges.append(NSRange(location: start, length: end - start))
+            start = newline.location + 1
+        }
+        if ranges.count > 1, let last = ranges.last, last.length == 0 {
+            ranges.removeLast()
+        }
+        return ranges
+    }
+
+    /// `getLineStart(_:end:contentsEnd:for:)` with lines as the engine
+    /// counts them: the line or lines `range` touches, broken at `\n` alone.
+    /// What the caret's own line is must agree with what the engine calls
+    /// a line, or Return, list continuation and typing attributes act on a
+    /// fragment of it after a soft break.
+    func getEngineLineStart(
+        _ startPointer: UnsafeMutablePointer<Int>?,
+        end endPointer: UnsafeMutablePointer<Int>?,
+        contentsEnd contentsEndPointer: UnsafeMutablePointer<Int>?,
+        for range: NSRange
+    ) {
+        let location = min(max(range.location, 0), length)
+        var start = 0
+        if location > 0 {
+            let before = self.range(
+                of: "\n", options: [.literal, .backwards],
+                range: NSRange(location: 0, length: location))
+            if before.location != NSNotFound { start = before.location + 1 }
+        }
+        // The line holding the range's last character, or the caret's.
+        let last = range.length > 0 ? min(max(NSMaxRange(range) - 1, location), length) : location
+        let after = self.range(
+            of: "\n", options: .literal,
+            range: NSRange(location: last, length: length - last))
+        var end = length
+        var contentsEnd = length
+        if after.location != NSNotFound {
+            end = after.location + 1
+            contentsEnd = after.location
+            if contentsEnd > start, character(at: contentsEnd - 1) == 0x0D { contentsEnd -= 1 }
+        }
+        startPointer?.pointee = start
+        endPointer?.pointee = end
+        contentsEndPointer?.pointee = contentsEnd
+    }
+
+    /// `lineRange(for:)` with lines as the engine counts them, terminator
+    /// included.
+    func engineLineRange(for range: NSRange) -> NSRange {
+        var start = 0
+        var end = 0
+        getEngineLineStart(&start, end: &end, contentsEnd: nil, for: range)
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// Calls `body` with each line's contents range, lines as the engine
+    /// counts them.
+    func enumerateEngineLines(_ body: (NSRange) -> Void) {
+        engineLineRanges().forEach(body)
     }
 }

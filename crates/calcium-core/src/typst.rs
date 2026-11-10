@@ -126,12 +126,7 @@ pub fn to_typst(source: &str) -> String {
                 }
             }
             BlockKind::Code => {
-                let joined = block
-                    .lines
-                    .iter()
-                    .map(|l| l.trim())
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let joined = crate::doc::joined(block);
                 let statements = parse_line(&joined);
                 // The classifier reads an unindented line with an operator as
                 // a calculation, which sweeps up hard-wrapped prose like
@@ -159,17 +154,11 @@ pub fn to_typst(source: &str) -> String {
                     });
                     continue;
                 }
-                let arrow_lines = arrow_lines(block);
-                let mut arrow_index = 0;
-                for statement in statements {
-                    let answer = if statement.arrow {
-                        let line = arrow_lines.get(arrow_index).copied();
-                        arrow_index += 1;
-                        line.and_then(|l| answers.get_mut(&l))
-                            .and_then(|q| q.pop_front())
-                    } else {
-                        None
-                    };
+                let slots = crate::doc::answer_slots(block, &joined, &statements);
+                for (statement, slot) in statements.into_iter().zip(slots) {
+                    let answer = slot
+                        .and_then(|slot| answers.get_mut(&slot.line))
+                        .and_then(|q| q.pop_front());
                     // A plot statement typesets as its sampled diagram; one
                     // that failed to sample falls through and echoes as the
                     // equation it is.
@@ -377,7 +366,7 @@ fn symbol_mapping(line: &str) -> Option<(String, String)> {
         return None;
     }
     match parse_line(head).as_slice() {
-        [Statement { stmt: Stmt::Expr(Expr::Var(name)), arrow: false }] => {
+        [Statement { stmt: Stmt::Expr(Expr::Var(name)), arrow: false, .. }] => {
             Some((name.clone(), symbol.to_string()))
         }
         _ => None,
@@ -396,17 +385,6 @@ fn comment_byte(line: &str) -> Option<usize> {
         count += ch.len_utf16();
     }
     Some(line.len())
-}
-
-/// Source line numbers of each `=>` inside a block.
-fn arrow_lines(block: &Block) -> Vec<usize> {
-    let mut out = Vec::new();
-    for (offset, line) in block.lines.iter().enumerate() {
-        for _ in line.matches("=>") {
-            out.push(block.line + offset);
-        }
-    }
-    out
 }
 
 /// One display equation: an optional left-hand side to align on, and the
@@ -499,12 +477,7 @@ impl Renderer {
                     }
                 }
                 BlockKind::Code => {
-                    let joined = block
-                        .lines
-                        .iter()
-                        .map(|l| l.trim())
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let joined = crate::doc::joined(block);
                     for statement in parse_line(&joined) {
                         match &statement.stmt {
                             Stmt::Define { name, params, .. } => {

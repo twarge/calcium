@@ -369,6 +369,9 @@ const MAX_CALLS: usize = 64;
 /// cases burn this whole budget in a fraction of a second.
 const FUEL_BUDGET: usize = 250_000;
 
+/// The answer shown when definitions refer to one another too deeply.
+pub(crate) const DEPTH_ERROR: &str = "gave up: definitions nest too deeply";
+
 /// The answer shown when the budget runs out.
 pub(crate) const FUEL_ERROR: &str = "gave up: the computation kept growing";
 
@@ -383,6 +386,11 @@ thread_local! {
 /// one runaway answer cannot starve the rest of the document.
 pub fn refuel() {
     FUEL.with(|fuel| fuel.set(FUEL_BUDGET));
+}
+
+/// Whether the tank is empty.
+pub(crate) fn fuel_is_dry() -> bool {
+    FUEL.with(|fuel| fuel.get() == 0)
 }
 
 /// Burns one unit; false once the tank is dry.
@@ -876,8 +884,10 @@ impl Env {
     pub fn eval_in(&self, expr: &Expr, ctx: &mut Ctx) -> Expr {
         if ctx.depth > MAX_DEPTH {
             // Truncated, not the value the expression denotes: uncacheable.
+            // And an error, not the half-evaluated tree: `b300 => b43 +
+            // 44,204` reads as an answer and is not one.
             HARD_TAINT.with(|taint| taint.set(true));
-            return expr.clone();
+            return Expr::Error(DEPTH_ERROR.to_string());
         }
         if !spend_fuel() {
             HARD_TAINT.with(|taint| taint.set(true));
@@ -1193,8 +1203,12 @@ impl Env {
             .collect();
         let ctx = arg_ctx;
 
-        // A user definition shadows a builtin of the same name.
-        if let Some(def) = self.defs.get(name) {
+        // A user definition shadows a builtin of the same name — but a unit
+        // does not: `min` is the minute where a quantity is wanted and the
+        // function where it is called, as `45 min` and `min(3, 4)` both read.
+        let unit_beside_builtin =
+            |def: &Def| def.is_unit && def.from_prelude && builtins::is_builtin(name);
+        if let Some(def) = self.defs.get(name).filter(|def| !unit_beside_builtin(def)) {
             // A *call* may re-enter its own definition: that is recursion, and
             // the base case in an `if` is what stops it. Only a bare variable
             // reference is blocked by `active`, which is what makes `r = r`
@@ -1225,7 +1239,9 @@ impl Env {
         if ctx.active.iter().any(|n| n == name) {
             record_active_hit(name);
         }
-        if !ctx.active.iter().any(|n| n == name) {
+        // Never a builtin's name: `min(3, 2 m)` that could not be compared
+        // is a call left standing, not an unknown for `t = 5 min` to solve.
+        if !builtins::is_builtin(name) && !ctx.active.iter().any(|n| n == name) {
             ctx.active.push(name.to_string());
             let solution = crate::solve::solve_for(self, name);
             ctx.active.pop();

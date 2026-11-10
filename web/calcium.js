@@ -15,6 +15,10 @@ import { load } from "./engine.js";
 const { call } = await load();
 const lineInfo = (text) => JSON.parse(call("calcium_line_kinds", text) ?? "[]");
 const tokenInfo = (text) => JSON.parse(call("calcium_tokens", text) ?? "[]");
+// Where each answer sits in the live text — parsed, not evaluated, so it is
+// cheap enough for every paint. The engine's parser decides what an arrow
+// is: not one inside a string literal, and one per `;`-separated statement.
+const answerSlots = (text) => JSON.parse(call("calcium_answer_slots", text) ?? "[]");
 
 const worker = new Worker(new URL("worker.js", import.meta.url), { type: "module" });
 
@@ -29,7 +33,8 @@ function adjust(caret, editStart, editEnd, newLength) {
   return caret + newLength - (editEnd - editStart);
 }
 
-/** Writes fresh answers after each `=>`; returns [text, caret]. */
+/** Writes each fresh answer into the range the engine gave for it — the
+ *  text must be the text that was evaluated; returns [text, caret]. */
 function splice(text, answers, caret) {
   const lines = text.split("\n");
   const starts = [];
@@ -42,10 +47,9 @@ function splice(text, answers, caret) {
   for (const answer of answers) {
     const line = lines[answer.line];
     if (line === undefined) continue;
-    const arrow = line.indexOf("=>");
-    if (arrow < 0) continue;
-    const from = starts[answer.line] + arrow + 2;
-    const to = starts[answer.line] + line.length;
+    if (answer.start > answer.end || answer.end > line.length) continue;
+    const from = starts[answer.line] + answer.start;
+    const to = starts[answer.line] + answer.end;
     const replacement = answer.text ? " " + answer.text : "";
     if (text.slice(from, to) !== replacement) edits.push([from, to, replacement]);
   }
@@ -62,7 +66,8 @@ function splice(text, answers, caret) {
 // ---------------------------------------------------------------------------
 
 const escapeHTML = (s) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 // Markdown links on prose lines become real anchors — the backdrop sits
 // above the textarea with pointer-events off, and the anchors alone opt
@@ -85,8 +90,20 @@ function linkifyProse(line) {
   return html;
 }
 
-function renderBackdrop(text, answers, info, toks) {
-  const answerByLine = new Map(answers.map((a) => [a.line, a]));
+function renderBackdrop(text, answers, info, toks, slots) {
+  // The live text's slots, each paired with the last evaluation's answer
+  // for the same line and position on it: the value may be a beat stale,
+  // the range never is.
+  const slotsByLine = new Map();
+  const seen = new Map();
+  for (const slot of slots) {
+    const nth = seen.get(slot.line) ?? 0;
+    seen.set(slot.line, nth + 1);
+    const answer = answers.filter((a) => a.line === slot.line)[nth];
+    if (!answer) continue;
+    if (!slotsByLine.has(slot.line)) slotsByLine.set(slot.line, []);
+    slotsByLine.get(slot.line).push([slot.start, slot.end, answer.error ? "error" : "answer"]);
+  }
   return text
     .split("\n")
     .map((line, i) => {
@@ -109,11 +126,8 @@ function renderBackdrop(text, answers, info, toks) {
       for (const t of toks?.[i] ?? []) {
         if (t.c !== "name") cuts.push([t.o, t.o + t.l, "tok-" + t.c]);
       }
-      const answer = answerByLine.get(i);
-      if (answer) {
-        const arrow = line.indexOf("=>");
-        if (arrow >= 0 && arrow + 2 < line.length)
-          cuts.push([arrow + 2, line.length, answer.error ? "error" : "answer"]);
+      for (const cut of slotsByLine.get(i) ?? []) {
+        if (cut[0] < cut[1]) cuts.push(cut);
       }
       if (meta.comment !== undefined && meta.comment !== null)
         cuts.push([meta.comment, line.length, "comment"]);
@@ -152,7 +166,8 @@ let lastAnswers = [];
 /// the live text.
 function paint() {
   backdrop.innerHTML = renderBackdrop(
-    editor.value, lastAnswers, lineInfo(editor.value), tokenInfo(editor.value));
+    editor.value, lastAnswers, lineInfo(editor.value), tokenInfo(editor.value),
+    answerSlots(editor.value));
   // A trailing newline in a <textarea> renders one line shorter than the same
   // text in a <div>; pad so the columns stay aligned.
   if (editor.value.endsWith("\n")) backdrop.innerHTML += "\n";

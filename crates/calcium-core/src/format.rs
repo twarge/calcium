@@ -364,10 +364,19 @@ fn format_number(value: &Num, radix: Radix, fmt: &NumFormat) -> String {
     }
 }
 
+const MAX_DECIMALS: usize = 400;
+
 /// A value at a fixed number of decimal places, honouring the separators
 /// and grouping of the ambient format.
 fn fixed_decimals(value: &Num, decimals: usize, fmt: &NumFormat) -> String {
-    let text = format!("{:.*}", decimals, value.to_f64());
+    // Bounded: a literal like `1.0e-65535` asks for that many places, and
+    // the formatter panics past u16::MAX. Nothing an f64 holds needs more.
+    // And a literal that far down is zero to an f64: say so, rather than
+    // spell out four hundred of them.
+    if decimals > MAX_DECIMALS && value.to_f64() == 0.0 {
+        return "0".to_string();
+    }
+    let text = format!("{:.*}", decimals.min(MAX_DECIMALS), value.to_f64());
     let (integer, fraction) = text.split_once('.').unwrap_or((text.as_str(), ""));
     let (sign, digits) = match integer.strip_prefix('-') {
         Some(rest) => ("-", rest),

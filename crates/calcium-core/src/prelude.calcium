@@ -179,6 +179,7 @@ secs = s
 minute = 60 s
 minutes = minute
 mins = minute
+min = minute
 hour = 60 minute
 hours = hour
 hr = hour

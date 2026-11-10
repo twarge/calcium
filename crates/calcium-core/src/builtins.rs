@@ -119,6 +119,9 @@ pub fn call(env: &Env, name: &str, args: &[Arg], ctx: &mut Ctx) -> Option<Expr> 
             let (y, x) = (num_of(&values[0])?, num_of(&values[1])?);
             Some(angle(Num::from_f64(y.to_f64().atan2(x.to_f64()))))
         }
+        "min" | "max" if spread(&values).iter().any(|item| num_of(item).is_none()) => {
+            extreme_quantity(env, name == "min", &spread(&values))
+        }
         "min" | "max" => {
             let items = spread(&values);
             let mut best: Option<Num> = None;
@@ -155,6 +158,11 @@ pub fn call(env: &Env, name: &str, args: &[Arg], ctx: &mut Ctx) -> Option<Expr> 
         }
         "choose" | "nCr" if values.len() == 2 => {
             let (n, k) = (num_of(&values[0])?.to_i64()?, num_of(&values[1])?.to_i64()?);
+            // Exact while the loop is short; `choose(10^9, 5*10^8)` is a
+            // number nobody can read and a loop nobody can wait for.
+            if k.min(n.saturating_sub(k)) > MAX_BINOMIAL_STEPS {
+                return Some(Expr::Error("choose: too large to compute".to_string()));
+            }
             Some(Expr::Num(binomial(n, k), Radix::Dec))
         }
         "len" => match first? {
@@ -336,6 +344,52 @@ fn call_unary(name: &str, arg: &Expr) -> Option<Expr> {
 }
 
 /// `min(1, 2, 3)` and `min([1, 2, 3])` mean the same thing.
+/// `min`/`max` over quantities: `min(2 min, 90 s)` is `90 s`. Each item is
+/// compared in base units and the winner returned as it was written.
+/// `None` — the call stays symbolic — unless every item is a number times
+/// units and all share one dimension; `min(2 x, 3 x)` for an unknown `x`
+/// has no answer, and neither does `min(2 m, 3 s)`.
+fn extreme_quantity(env: &Env, smallest: bool, items: &[Expr]) -> Option<Expr> {
+    let mut best: Option<(Num, &Expr)> = None;
+    let mut dimension: Option<Expr> = None;
+    for item in items {
+        let (value, units) = match env.eval_expanded(item) {
+            Expr::Num(value, _) => (value, Expr::num(1)),
+            Expr::Mul(factors) => {
+                let value = factors.iter().find_map(num_of)?;
+                let rest: Vec<Expr> =
+                    factors.iter().filter(|f| num_of(f).is_none()).cloned().collect();
+                (value, simplify(&Expr::mul(rest)))
+            }
+            // A bare unit: `min(hr, 90 min)`.
+            other => (Num::one(), other),
+        };
+        if !units.free_vars().iter().all(|name| env.is_unit_name(name)) {
+            return None;
+        }
+        match &dimension {
+            None => dimension = Some(units),
+            Some(shared) if *shared == units => {}
+            Some(_) => return None,
+        }
+        let wins = match &best {
+            None => true,
+            Some((current, _)) => {
+                let order = value.cmp_num(current)?;
+                if smallest {
+                    order == std::cmp::Ordering::Less
+                } else {
+                    order == std::cmp::Ordering::Greater
+                }
+            }
+        };
+        if wins {
+            best = Some((value, item));
+        }
+    }
+    best.map(|(_, item)| item.clone())
+}
+
 fn spread(values: &[Expr]) -> Vec<Expr> {
     if values.len() == 1 {
         if let Expr::Matrix(rows) = &values[0] {
@@ -351,6 +405,11 @@ fn flatten_matrix(expr: &Expr) -> Option<Vec<Expr>> {
         _ => None,
     }
 }
+
+const MAX_BINOMIAL_STEPS: i64 = 2_000;
+
+/// The deepest `g(g(g(…)))` a symbolic `reduce` will build.
+const MAX_SYMBOLIC_REDUCE: usize = 100;
 
 fn binomial(n: i64, k: i64) -> Num {
     if k < 0 || k > n {
@@ -524,11 +583,22 @@ fn column_major(rows: &[Vec<Expr>]) -> Vec<Expr> {
     transpose(rows).into_iter().flatten().collect()
 }
 
+/// The longest range that is walked item by item. `1..10^10` would be
+/// collected whole before any budget saw it; past this it stays symbolic.
+const MAX_RANGE_ITEMS: u64 = 100_000;
+
+fn range_is_walkable(lo: i64, hi: i64) -> bool {
+    lo.abs_diff(hi) < MAX_RANGE_ITEMS
+}
+
 fn as_range(expr: &Expr) -> Option<Vec<i64>> {
     match expr {
         Expr::Range(lo, hi) => {
             let lo = num_of(lo)?.to_i64()?;
             let hi = num_of(hi)?.to_i64()?;
+            if !range_is_walkable(lo, hi) {
+                return None;
+            }
             Some(if lo <= hi {
                 (lo..=hi).collect()
             } else {
@@ -542,6 +612,50 @@ fn as_range(expr: &Expr) -> Option<Vec<i64>> {
 // ---------------------------------------------------------------------------
 // Matrices
 // ---------------------------------------------------------------------------
+
+const MAX_SYMBOLIC_DETERMINANT: usize = 6;
+
+/// The determinant of a matrix of plain numbers, by Gaussian elimination
+/// with exact arithmetic. `None` if any cell is not a bare number.
+fn numeric_determinant(rows: &[Vec<Expr>]) -> Option<Num> {
+    let n = rows.len();
+    let mut work: Vec<Vec<Num>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| match cell {
+                    Expr::Num(value, _) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<Num>>>()
+        })
+        .collect::<Option<_>>()?;
+    if work.iter().any(|row| row.len() != n) {
+        return None;
+    }
+    let mut det = Num::one();
+    for col in 0..n {
+        let Some(pivot) = (col..n).find(|&r| !work[r][col].is_zero()) else {
+            return Some(Num::zero());
+        };
+        if pivot != col {
+            work.swap(pivot, col);
+            det = det.neg();
+        }
+        det = det.mul(&work[col][col]);
+        for r in col + 1..n {
+            if work[r][col].is_zero() {
+                continue;
+            }
+            let factor = work[r][col].div(&work[col][col]);
+            for k in col..n {
+                let scaled = work[col][k].mul(&factor);
+                work[r][k] = work[r][k].sub(&scaled);
+            }
+        }
+    }
+    Some(det)
+}
 
 pub fn determinant(rows: &[Vec<Expr>]) -> Expr {
     let n = rows.len();
@@ -557,8 +671,18 @@ pub fn determinant(rows: &[Vec<Expr>]) -> Expr {
             Expr::mul(vec![rows[0][1].clone(), rows[1][0].clone()]),
         ));
     }
+    // All plain numbers: eliminate, exactly, in cubic time.
+    if let Some(value) = numeric_determinant(rows) {
+        return Expr::Num(value, Radix::Dec);
+    }
     // Cofactor expansion along the first row. Fine for the small matrices a
-    // symbolic inverse is useful on.
+    // symbolic inverse is useful on — and factorial beyond them, where the
+    // budget ran dry and a half-expanded sum came back as the answer.
+    if n > MAX_SYMBOLIC_DETERMINANT {
+        return Expr::Error(format!(
+            "determinant: symbolic matrices larger than {MAX_SYMBOLIC_DETERMINANT}x{MAX_SYMBOLIC_DETERMINANT} are not expanded"
+        ));
+    }
     let mut terms = Vec::new();
     for (c, cell) in rows[0].iter().enumerate() {
         let minor: Vec<Vec<Expr>> = rows[1..]
@@ -726,6 +850,9 @@ fn items_of(expr: &Expr) -> Option<Vec<Expr>> {
         Expr::Range(lo, hi) => {
             let lo = num_of(lo)?.to_i64()?;
             let hi = num_of(hi)?.to_i64()?;
+            if !range_is_walkable(lo, hi) {
+                return None;
+            }
             Some(
                 if lo <= hi {
                     (lo..=hi).collect::<Vec<_>>()
@@ -958,6 +1085,11 @@ fn reduce(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
     let symbolic = matches!(source, Expr::Var(name)
         if (!env.is_defined(name) || env.is_unit_name(name)) && names.len() < 2);
 
+    // Each item is one more level of `g(g(g(…)))`, a tree everything
+    // downstream walks recursively.
+    if symbolic && iter.len() > MAX_SYMBOLIC_REDUCE {
+        return Expr::Error("reduce: too many items to nest".to_string());
+    }
     for item in iter {
         if symbolic {
             let Expr::Var(name) = source else { unreachable!() };
@@ -1018,12 +1150,19 @@ fn derivative(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
         .and_then(|n| n.to_i64())
         .unwrap_or(1);
 
+    if order > MAX_DERIVATIVE_ORDER {
+        return Expr::Error(format!("der: order above {MAX_DERIVATIVE_ORDER}"));
+    }
     let mut result = body;
     for _ in 0..order.max(0) {
         result = differentiate(&result, &variable);
     }
     simplify(&result)
 }
+
+/// The highest derivative `der` and `taylor` will take. The loops are
+/// otherwise as long as the number typed, and each pass can grow the tree.
+const MAX_DERIVATIVE_ORDER: i64 = 64;
 
 /// Symbolic differentiation.
 pub fn differentiate(expr: &Expr, variable: &str) -> Expr {
@@ -1235,6 +1374,9 @@ fn taylor(env: &Env, args: &[Arg], ctx: &mut Ctx) -> Expr {
         .and_then(|n| n.to_i64())
         .unwrap_or(1);
 
+    if order > MAX_DERIVATIVE_ORDER {
+        return Expr::Error(format!("taylor: order above {MAX_DERIVATIVE_ORDER}"));
+    }
     let mut terms = Vec::new();
     let mut derivative = body;
     let mut factorial = Num::one();

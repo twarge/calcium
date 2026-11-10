@@ -66,6 +66,7 @@ pub fn sample(env: &Env, args: &[Arg]) -> Option<Plot> {
     // fresh tank per sample in `value_at` — 256 small evaluations rather
     // than one huge one, so a pole still costs only its own point.
     crate::eval::refuel();
+    DRY_SAMPLES.with(|dry| dry.set(0));
     // A named range argument binds the sweep variable and sets the domain:
     // `plot(x^2, x = 0..10)`.
     let mut binder: Option<String> = None;
@@ -418,10 +419,24 @@ fn steps((lo, hi): (f64, f64)) -> Vec<f64> {
         .collect()
 }
 
+/// Samples one plot may run out of fuel on before the rest are skipped.
+const MAX_DRY_SAMPLES: u32 = 3;
+
+thread_local! {
+    /// Samples of the plot in flight that ran their tank dry.
+    static DRY_SAMPLES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// One sample: the expression with `bound` set to `x` — carrying the
 /// domain's unit, so `0..1.5s` binds `0.37 s`, not `0.37` — as a finite
 /// number.
 fn value_at(env: &Env, body: &Expr, bound: &str, x: f64, unit: Option<&Expr>) -> Option<f64> {
+    // A body that keeps running its tank dry is a runaway — a recursion
+    // whose guard never resolves — and 256 full tanks of it is minutes of
+    // nothing. A few dry samples settle that; the rest are skipped.
+    if DRY_SAMPLES.with(|dry| dry.get()) >= MAX_DRY_SAMPLES {
+        return None;
+    }
     // Each sample evaluates on a full tank; see `sample`.
     crate::eval::refuel();
     let mut ctx = Ctx {
@@ -435,6 +450,9 @@ fn value_at(env: &Env, body: &Expr, bound: &str, x: f64, unit: Option<&Expr>) ->
     };
     ctx.locals.insert(bound.to_string(), sample);
     let value = crate::simplify::simplify(&env.eval_in(body, &mut ctx));
+    if crate::eval::fuel_is_dry() {
+        DRY_SAMPLES.with(|dry| dry.set(dry.get() + 1));
+    }
     numeric(env, &value).filter(|v| v.is_finite())
 }
 

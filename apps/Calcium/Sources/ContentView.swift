@@ -98,8 +98,10 @@ private struct OutlineMenu: View {
 
     private var headings: [Heading] {
         text.components(separatedBy: "\n").enumerated().compactMap { index, line in
+            // Headings live at the margin: an indented `#` line is a
+            // commented-out calculation, as the engine reads it.
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("#"), !trimmed.hasPrefix("#?") else { return nil }
+            guard line.hasPrefix("#"), !line.hasPrefix("#?") else { return nil }
             let level = trimmed.prefix(while: { $0 == "#" }).count
             let title = trimmed.drop(while: { $0 == "#" })
                 .trimmingCharacters(in: .whitespaces)

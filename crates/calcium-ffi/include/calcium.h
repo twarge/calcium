@@ -10,8 +10,17 @@
 extern "C" {
 #endif
 
-/// Answers as JSON: [{"line":0,"text":"4","error":false}, ...], line 0-based.
+/// Answers as JSON, line 0-based:
+/// [{"line":0,"text":"4","error":false,"start":8,"end":10}, ...]
+/// `start..end` is the UTF-16 range on that line the answer occupies, from
+/// just past the arrow to the end of the answer already there. An editor
+/// replaces that range and never searches the text for the arrow.
 char *calcium_evaluate(const char *source);
+
+/// Where every answer sits, parsed but not evaluated — cheap enough for a
+/// keystroke: [{"line":0,"arrow":6,"start":8,"end":10}, ...], UTF-16 offsets
+/// within the line of the arrow and of the answer's range.
+char *calcium_answer_slots(const char *source);
 
 /// Answers and sampled plots from one evaluation:
 /// {"answers":[...],"plots":[...]}, each half exactly as calcium_evaluate
@@ -32,7 +41,11 @@ char *calcium_typst(const char *source);
 ///   "points":[[0,0], ...]}]}, ...]
 char *calcium_plots(const char *source);
 
-/// How each line reads: ["heading","code","prose", ...], one per source line.
+/// How each line reads, one object per source line; `kind` is "heading",
+/// "code", "prose" or "raw" (inside a fence), the other keys are optional
+/// and offsets are UTF-16:
+/// [{"kind":"heading","level":2}, {"kind":"prose"},
+///  {"kind":"code","comment":12,"query":20,"redefines":[4,5],"block":3}, ...]
 char *calcium_line_kinds(const char *source);
 
 /// Token spans per line, UTF-16 offsets, empty arrays for prose:

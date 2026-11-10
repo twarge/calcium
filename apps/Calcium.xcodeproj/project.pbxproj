@@ -33,6 +33,8 @@
 		EAD823A0A796C1E35685C7E8 /* EditorCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82783BFED8025A82AA2BC0F /* EditorCommands.swift */; };
 		F7C18F1CA0E0533C5889536D /* EditorViewIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C301BA0702E182F43ACAEF1 /* EditorViewIOS.swift */; };
 		FC8272EABB3A433F8D16CFCC /* PreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B8C5BB423F4E0AB41BBBF9 /* PreviewRenderer.swift */; };
+		7D1A5C0E9B3F4E2A8C6D0F12 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7D1A5C0E9B3F4E2A8C6D0F11 /* PrivacyInfo.xcprivacy */; };
+		7D1A5C0E9B3F4E2A8C6D0F13 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7D1A5C0E9B3F4E2A8C6D0F11 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +88,7 @@
 		DDDE1046FAE26031488AB8AA /* CalciumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalciumApp.swift; sourceTree = "<group>"; };
 		E6CF4355AF72CBB535F0DC31 /* EditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorView.swift; sourceTree = "<group>"; };
 		EA16E2D9294F46398448423F /* Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Style.swift; sourceTree = "<group>"; };
+		7D1A5C0E9B3F4E2A8C6D0F11 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -94,6 +97,7 @@
 			children = (
 				A3E0F628FB14F0B714D42286 /* Fonts */,
 				6C2E94D1A0B34F78E5C6A901 /* reference.calcium */,
+				7D1A5C0E9B3F4E2A8C6D0F11 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -251,6 +255,7 @@
 				E979B1CD599F11951850E890 /* Assets.xcassets in Resources */,
 				C1535F837EE16F3E50AA9E4C /* Fonts in Resources */,
 				8E5D21C4B7F04A93C6E1D208 /* reference.calcium in Resources */,
+				7D1A5C0E9B3F4E2A8C6D0F12 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -259,6 +264,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				72F6D80C124B4021BD477B5B /* Fonts in Resources */,
+				7D1A5C0E9B3F4E2A8C6D0F13 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6,7 +6,21 @@
 //!   calcium typst <file.calcium>   convert the document to Typst markup
 
 use calcium_core::check::{check_source, Report};
+use std::io::Write;
 use std::process::ExitCode;
+
+/// Writes a document to stdout. A reader that hangs up early — `calcium run
+/// big | head` — is a quiet exit, not the panic `println!` makes of it.
+fn emit(text: &str) {
+    let mut out = std::io::stdout().lock();
+    if let Err(err) = writeln!(out, "{text}").and_then(|()| out.flush()) {
+        if err.kind() == std::io::ErrorKind::BrokenPipe {
+            std::process::exit(0);
+        }
+        eprintln!("stdout: {err}");
+        std::process::exit(1);
+    }
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -25,7 +39,7 @@ fn main() -> ExitCode {
 fn run(paths: &[String]) -> ExitCode {
     for path in paths {
         match std::fs::read_to_string(path) {
-            Ok(source) => println!("{}", calcium_core::doc::rewrite(&source)),
+            Ok(source) => emit(&calcium_core::doc::rewrite(&source)),
             Err(err) => {
                 eprintln!("{path}: {err}");
                 return ExitCode::FAILURE;
@@ -40,7 +54,7 @@ fn run(paths: &[String]) -> ExitCode {
 fn typst(paths: &[String]) -> ExitCode {
     for path in paths {
         match std::fs::read_to_string(path) {
-            Ok(source) => println!("{}", calcium_core::typst::to_typst(&source)),
+            Ok(source) => emit(&calcium_core::typst::to_typst(&source)),
             Err(err) => {
                 eprintln!("{path}: {err}");
                 return ExitCode::FAILURE;
@@ -97,5 +111,11 @@ fn check(paths: &[String]) -> ExitCode {
         overall.total(),
         overall.rate()
     );
-    ExitCode::SUCCESS
+    // A disagreement fails the run, so `check` can gate a script or CI. A
+    // line with no answer yet is unfinished, not wrong.
+    if overall.wrong > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
