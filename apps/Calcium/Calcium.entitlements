@@ -24,5 +24,9 @@
 	<array>
 		<string>iCloud.com.twarge.calcium</string>
 	</array>
+	<!-- iCloud key-value store: the editor preferences SettingsSync
+	     mirrors between the user's devices. -->
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
 </dict>
 </plist>

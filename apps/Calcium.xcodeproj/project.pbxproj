@@ -25,6 +25,7 @@
 		8E5D21C4B7F04A93C6E1D208 /* reference.calcium in Resources */ = {isa = PBXBuildFile; fileRef = 6C2E94D1A0B34F78E5C6A901 /* reference.calcium */; };
 		938728455A234C56BABD7990 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
 		9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */; };
+		A91D3C5E7B2F4860A1C7E5D2 /* SettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91D3C5E7B2F4860A1C7E5D1 /* SettingsSync.swift */; };
 		B4584E42672F07800FBDE311 /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CF4355AF72CBB535F0DC31 /* EditorView.swift */; };
 		C1535F837EE16F3E50AA9E4C /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = A3E0F628FB14F0B714D42286 /* Fonts */; };
 		C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
@@ -75,6 +76,7 @@
 		4E562C67F8599B8B0DAF92F4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5638946C47224D3FAC8F8864 /* CalciumQuickLook.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CalciumQuickLook.entitlements; sourceTree = "<group>"; };
 		5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		A91D3C5E7B2F4860A1C7E5D1 /* SettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSync.swift; sourceTree = "<group>"; };
 		6C2E94D1A0B34F78E5C6A901 /* reference.calcium */ = {isa = PBXFileReference; lastKnownFileType = text; name = reference.calcium; path = ../corpus/reference.calcium; sourceTree = SOURCE_ROOT; };
 		76A1C4E20D15B7F3A2E94C00 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		76A1C4E20D15B7F3A2E94C02 /* TypstExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypstExport.swift; sourceTree = "<group>"; };
@@ -141,6 +143,7 @@
 				A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */,
 				76A1C4E20D15B7F3A2E94C04 /* PlotView.swift */,
 				5E02BE04D1588C90765B0AA2 /* PreferencesView.swift */,
+				A91D3C5E7B2F4860A1C7E5D1 /* SettingsSync.swift */,
 				EA16E2D9294F46398448423F /* Style.swift */,
 				76A1C4E20D15B7F3A2E94C02 /* TypstExport.swift */,
 				D1C2B3871A8362E5208C647E /* WindowChrome.swift */,
@@ -345,6 +348,7 @@
 				CA83749043AAEF6606B54FA3 /* KeypadAccessory.swift in Sources */,
 				76A1C4E20D15B7F3A2E94C05 /* PlotView.swift in Sources */,
 				9AC712A34D39805E50F93453 /* PreferencesView.swift in Sources */,
+				A91D3C5E7B2F4860A1C7E5D2 /* SettingsSync.swift in Sources */,
 				C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */,
 				76A1C4E20D15B7F3A2E94C03 /* TypstExport.swift in Sources */,
 				739CC4829ABFAF7DF9D1879D /* WindowChrome.swift in Sources */,

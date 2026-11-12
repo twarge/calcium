@@ -163,6 +163,8 @@ struct CalciumApp: App {
         ] {
             UserDefaults.standard.set(false, forKey: key)
         }
+        // After the writes above, so they are not what starts the mirror.
+        SettingsSync.shared.start()
     }
 
     var body: some Scene {

@@ -89,7 +89,10 @@ on the system. The format is plain text; renaming a file to `.calcium` is
 all it takes.
 
 Preferences (⌘,) hold the default font size, the ligature toggle, and whether
-the title bar hides. Zoom and cursor position are remembered *per document*, in
+the title bar hides. The editing preferences — prose face, ligatures,
+completions, proofing, the starter text — follow the user between devices
+through iCloud's key-value store; font size, title bar and colours stay with
+the device. Zoom and cursor position are remembered *per document*, in
 an extended attribute on the file — the TextEdit mechanism — because view state
 belongs to the document but must not appear in it; a `.calcium` file is plain
 text and stays that way.
