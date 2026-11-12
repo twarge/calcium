@@ -29,7 +29,7 @@
 		C1535F837EE16F3E50AA9E4C /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = A3E0F628FB14F0B714D42286 /* Fonts */; };
 		C1FEDB387D2F4C0E84F87B20 /* Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA16E2D9294F46398448423F /* Style.swift */; };
 		CA83749043AAEF6606B54FA3 /* KeypadAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CF8B3B3CF12D2018930447 /* KeypadAccessory.swift */; };
-		E979B1CD599F11951850E890 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 03D9CDCB7D0120118A2354EF /* Assets.xcassets */; };
+		E979B1CD599F11951850E890 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 03D9CDCB7D0120118A2354EF /* AppIcon.icon */; };
 		EAD823A0A796C1E35685C7E8 /* EditorCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82783BFED8025A82AA2BC0F /* EditorCommands.swift */; };
 		F7C18F1CA0E0533C5889536D /* EditorViewIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C301BA0702E182F43ACAEF1 /* EditorViewIOS.swift */; };
 		FC8272EABB3A433F8D16CFCC /* PreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42B8C5BB423F4E0AB41BBBF9 /* PreviewRenderer.swift */; };
@@ -62,7 +62,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		03D9CDCB7D0120118A2354EF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		03D9CDCB7D0120118A2354EF /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		06E6258CFE74DF89A94F6A15 /* Autocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Autocomplete.swift; sourceTree = "<group>"; };
 		09B7793ED420EEAAEEA4E8EC /* CalciumDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalciumDocument.swift; sourceTree = "<group>"; };
 		18E3AF071BA00D2D21BF09FB /* CompletionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletionPanel.swift; sourceTree = "<group>"; };
@@ -149,7 +149,7 @@
 		D25E76F11804122F8DEED954 /* Calcium */ = {
 			isa = PBXGroup;
 			children = (
-				03D9CDCB7D0120118A2354EF /* Assets.xcassets */,
+				03D9CDCB7D0120118A2354EF /* AppIcon.icon */,
 				5AB0B612681860557A9A5724 /* Resources */,
 				AE433FA74CB409BD298E4B04 /* Sources */,
 			);
@@ -252,7 +252,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E979B1CD599F11951850E890 /* Assets.xcassets in Resources */,
+				E979B1CD599F11951850E890 /* AppIcon.icon in Resources */,
 				C1535F837EE16F3E50AA9E4C /* Fonts in Resources */,
 				8E5D21C4B7F04A93C6E1D208 /* reference.calcium in Resources */,
 				7D1A5C0E9B3F4E2A8C6D0F12 /* PrivacyInfo.xcprivacy in Resources */,
