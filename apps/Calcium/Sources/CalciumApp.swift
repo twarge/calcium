@@ -3,7 +3,7 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 #endif
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import UIKit
 #endif
 
@@ -74,7 +74,7 @@ private struct ReferenceCommand: View {
         // system's own new-document affordance instead, seeded from a
         // temporary copy of the bundled reference — which also proposes its
         // filename, so the document arrives as "Calcium Reference".
-        if #available(iOS 18.0, *) {
+        if #available(iOS 18.0, visionOS 2.0, *) {
             NewDocumentButton("Calcium Reference", contentType: .calciumDocument) {
                 guard
                     let bundled = Bundle.main.url(
@@ -243,7 +243,7 @@ struct CalciumApp: App {
                 Button("Outdent") { CommandBus.shared.send(.outdent) }
                     .keyboardShortcut("[", modifiers: .command)
             }
-            #if os(iOS)
+            #if os(iOS) || os(visionOS)
             // On the Mac, ⌘N already means "new document window" and the
             // system provides it. On iPad it is unclaimed, and a fresh scene
             // is the nearest equivalent: it opens on the document browser,

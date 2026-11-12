@@ -131,7 +131,7 @@ private struct OutlineMenu: View {
 }
 #endif
 
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 /// The document as the share sheet offers it: the bytes a save would write —
 /// produced fresh from the buffer, never a stale on-disk copy — under the
 /// document's real filename.

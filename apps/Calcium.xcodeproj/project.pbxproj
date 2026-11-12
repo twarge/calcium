@@ -288,7 +288,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:$PATH\"\ncase \"$PLATFORM_NAME\" in\n  iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;\n  iphonesimulator)\n    # Both simulator architectures, folded into one library — the\n    # generic destination links x86_64 as well as arm64.\n    cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi\n    cargo build --release --target x86_64-apple-ios -p calcium-ffi\n    mkdir -p target/universal-ios-sim/release\n    lipo -create \\\n      target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \\\n      target/x86_64-apple-ios/release/libcalcium_ffi.a \\\n      -output target/universal-ios-sim/release/libcalcium_ffi.a\n    ;;\n  *)               cargo build --release -p calcium-ffi ;;\nesac\n";
+			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:$PATH\"\ncase \"$PLATFORM_NAME\" in\n  iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;\n  iphonesimulator)\n    # Both simulator architectures, folded into one library — the\n    # generic destination links x86_64 as well as arm64.\n    cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi\n    cargo build --release --target x86_64-apple-ios -p calcium-ffi\n    mkdir -p target/universal-ios-sim/release\n    lipo -create \\\n      target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \\\n      target/x86_64-apple-ios/release/libcalcium_ffi.a \\\n      -output target/universal-ios-sim/release/libcalcium_ffi.a\n    ;;\n  xros)            cargo build --release --target aarch64-apple-visionos -p calcium-ffi ;;\n  xrsimulator)     cargo build --release --target aarch64-apple-visionos-sim -p calcium-ffi ;;\n  *)               cargo build --release -p calcium-ffi ;;\nesac\n";
 		};
 		8CAB8273472AACAFB14ED8C2 /* Build Rust engine */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -307,7 +307,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:$PATH\"\ncase \"$PLATFORM_NAME\" in\n  iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;\n  iphonesimulator)\n    # Both simulator architectures, folded into one library — the\n    # generic destination links x86_64 as well as arm64.\n    cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi\n    cargo build --release --target x86_64-apple-ios -p calcium-ffi\n    mkdir -p target/universal-ios-sim/release\n    lipo -create \\\n      target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \\\n      target/x86_64-apple-ios/release/libcalcium_ffi.a \\\n      -output target/universal-ios-sim/release/libcalcium_ffi.a\n    ;;\n  *)               cargo build --release -p calcium-ffi ;;\nesac\n";
+			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:$PATH\"\ncase \"$PLATFORM_NAME\" in\n  iphoneos)        cargo build --release --target aarch64-apple-ios -p calcium-ffi ;;\n  iphonesimulator)\n    # Both simulator architectures, folded into one library — the\n    # generic destination links x86_64 as well as arm64.\n    cargo build --release --target aarch64-apple-ios-sim -p calcium-ffi\n    cargo build --release --target x86_64-apple-ios -p calcium-ffi\n    mkdir -p target/universal-ios-sim/release\n    lipo -create \\\n      target/aarch64-apple-ios-sim/release/libcalcium_ffi.a \\\n      target/x86_64-apple-ios/release/libcalcium_ffi.a \\\n      -output target/universal-ios-sim/release/libcalcium_ffi.a\n    ;;\n  xros)            cargo build --release --target aarch64-apple-visionos -p calcium-ffi ;;\n  xrsimulator)     cargo build --release --target aarch64-apple-visionos-sim -p calcium-ffi ;;\n  *)               cargo build --release -p calcium-ffi ;;\nesac\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -385,10 +385,14 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
 				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = "$(SRCROOT)/../target/aarch64-apple-visionos/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = "$(SRCROOT)/../target/aarch64-apple-visionos-sim/release";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xros*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xrsimulator*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi";
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium.quicklook;
 				PRODUCT_NAME = CalciumQuickLook;
@@ -424,10 +428,14 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
 				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = "$(SRCROOT)/../target/aarch64-apple-visionos/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = "$(SRCROOT)/../target/aarch64-apple-visionos-sim/release";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xros*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xrsimulator*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=macosx*]" = "-lcalcium_ffi";
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium.quicklook;
 				PRODUCT_NAME = CalciumQuickLook;
@@ -508,10 +516,14 @@
 				CODE_SIGNING_ALLOWED = NO;
 				"CODE_SIGNING_ALLOWED[sdk=iphoneos*]" = YES;
 				"ARCHS[sdk=macosx*]" = arm64;
+				"ARCHS[sdk=xrsimulator*]" = arm64;
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
+				"CODE_SIGNING_ALLOWED[sdk=xros*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
+				"CODE_SIGNING_REQUIRED[sdk=xros*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Calcium/CalciumIOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=xros*]" = Calcium/CalciumIOS.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Calcium/Calcium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -531,10 +543,14 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
 				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = "$(SRCROOT)/../target/aarch64-apple-visionos/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = "$(SRCROOT)/../target/aarch64-apple-visionos-sim/release";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xros*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xrsimulator*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=macosx*]" = (
 					"-lcalcium_ffi",
 					"-weak_framework",
@@ -543,13 +559,14 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium;
 				PRODUCT_NAME = Calcium;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.0;
 			};
 			name = Release;
 		};
@@ -615,10 +632,14 @@
 				CODE_SIGNING_ALLOWED = NO;
 				"CODE_SIGNING_ALLOWED[sdk=iphoneos*]" = YES;
 				"ARCHS[sdk=macosx*]" = arm64;
+				"ARCHS[sdk=xrsimulator*]" = arm64;
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = YES;
+				"CODE_SIGNING_ALLOWED[sdk=xros*]" = YES;
 				CODE_SIGNING_REQUIRED = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
+				"CODE_SIGNING_REQUIRED[sdk=xros*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Calcium/CalciumIOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=xros*]" = Calcium/CalciumIOS.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Calcium/Calcium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -638,10 +659,14 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../target/universal-ios-sim/release";
 				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = "$(SRCROOT)/../target/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = "$(SRCROOT)/../target/aarch64-apple-visionos/release";
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = "$(SRCROOT)/../target/aarch64-apple-visionos-sim/release";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xros*]" = "-lcalcium_ffi";
+				"OTHER_LDFLAGS[sdk=xrsimulator*]" = "-lcalcium_ffi";
 				"OTHER_LDFLAGS[sdk=macosx*]" = (
 					"-lcalcium_ffi",
 					"-weak_framework",
@@ -650,13 +675,14 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.twarge.calcium;
 				PRODUCT_NAME = Calcium;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../crates/calcium-ffi/include";
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.0;
 			};
 			name = Debug;
 		};

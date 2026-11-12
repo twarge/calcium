@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import SwiftUI
 import UIKit
 
@@ -155,6 +155,10 @@ struct EditorViewIOS: UIViewRepresentable {
         /// and the accessory refits itself from there — the rows divide
         /// whatever width the keyboard spans, inside the safe area, and
         /// rescale when the text size changes.
+        ///
+        /// visionOS has no `inputAccessoryView`, so neither the rows nor
+        /// the completion strip exist there.
+        #if !os(visionOS)
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard textView.inputAccessoryView == nil else { return }
             // The calculator rows are for the iPhone, whose letters
@@ -178,6 +182,7 @@ struct EditorViewIOS: UIViewRepresentable {
             textView.inputAccessoryView = accessory
             textView.reloadInputViews()
         }
+        #endif
 
         /// Line classification from the most recent highlight.
         private var lastLines: [LineInfo] = []
@@ -878,7 +883,9 @@ struct EditorViewIOS: UIViewRepresentable {
 
         /// The keypad shows suggestions in its top row; set when the keypad
         /// attaches on first focus.
+        #if !os(visionOS)
         weak var keypad: KeypadAccessory?
+        #endif
 
         private func wordPrefix(at caret: Int, in text: NSString) -> (NSRange, String)? {
             guard caret > 0, caret <= text.length else { return nil }
@@ -899,6 +906,7 @@ struct EditorViewIOS: UIViewRepresentable {
         }
 
         func updateCompletions(in textView: UITextView) {
+            #if !os(visionOS)
             guard let keypad else { return }
             guard UserDefaults.standard.object(forKey: "completions") as? Bool ?? true else {
                 keypad.showSuggestions([])
@@ -921,6 +929,7 @@ struct EditorViewIOS: UIViewRepresentable {
             var hits = Engine.completions(of: textView.text, line: line, prefix: word)
             hits.removeAll { $0.name == word }
             keypad.showSuggestions(Array(hits.prefix(4)))
+            #endif
         }
 
         func accept(_ pick: Completion, in textView: UITextView) {
